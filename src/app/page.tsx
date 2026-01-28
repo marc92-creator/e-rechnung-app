@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText, Plus, Trash2, Download, CheckCircle2, Building2, User,
   Receipt, ShoppingCart, Shield, Sparkles, Zap, Copy,
-  Check, FileSpreadsheet, Printer, FilePlus, X, AlertTriangle
+  FileSpreadsheet, Printer, FilePlus, X, AlertTriangle
 } from 'lucide-react';
 
 // ============================================================================
@@ -407,10 +407,10 @@ function FormInput({ label, value, onChange, onBlur, required = false, showError
         onChange={onChange}
         onBlur={onBlur}
         placeholder={placeholder}
-        className={`w-full min-h-[44px] h-11 px-4 rounded-xl border text-slate-900 text-base placeholder:text-slate-400 transition-all duration-200 ease-out outline-none ${
+        className={`w-full min-h-[44px] h-11 px-4 rounded-xl border text-slate-900 text-base placeholder:text-slate-400 transition-all duration-200 ease-out outline-none ring-1 ring-transparent ${
           hasError || hasValidationError
-            ? 'bg-red-50 border-red-300 focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10'
-            : 'bg-slate-50 border-slate-200 hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
+            ? 'bg-red-50 border-red-300 focus:bg-white focus:border-red-500 focus:ring-red-500/30 focus:shadow-sm'
+            : 'bg-slate-50/80 border-slate-200/80 hover:border-slate-300 hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 focus:shadow-sm'
         }`}
       />
       {hasValidationError && <p className="text-xs text-red-500 mt-1">Ungültiges Format</p>}
@@ -927,7 +927,7 @@ export default function Home() {
               exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-5 print:hidden">
 
               {/* Rechnungsdaten */}
-              <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden transition-shadow duration-300 hover:shadow-md">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><Receipt className="w-4 h-4 text-slate-600" /></div>
                   <h2 className="text-base font-semibold text-slate-900">Rechnungsdaten</h2>
@@ -943,7 +943,7 @@ export default function Home() {
                     </label>
                     <input type="date" value={rechnung.faelligkeit}
                       onChange={e => { setFaelligkeitManuallySet(true); setRechnung(prev => ({ ...prev, faelligkeit: e.target.value })); }}
-                      className="w-full min-h-[44px] h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-base transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                      className="w-full min-h-[44px] h-11 px-4 rounded-xl border border-slate-200/80 bg-slate-50/80 text-slate-900 text-base transition-all duration-200 outline-none ring-1 ring-transparent hover:border-slate-300 hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 focus:shadow-sm" />
                   </div>
                   <FormInput label="Leistungszeitraum" value={rechnung.leistungszeitraum} onChange={handleRechnungChange('leistungszeitraum')} placeholder="Januar 2026" />
                 </div>
@@ -952,7 +952,7 @@ export default function Home() {
               {/* Verkäufer & Käufer Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* Verkäufer */}
-                <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden transition-shadow duration-300 hover:shadow-md">
                   <div className="px-5 py-3 border-b border-blue-100 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center shadow-sm"><Building2 className="w-4 h-4 text-white" /></div>
                     <h2 className="text-base font-semibold text-slate-900">Ihre Firma</h2>
@@ -987,7 +987,7 @@ export default function Home() {
                 </section>
 
                 {/* Käufer */}
-                <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden transition-shadow duration-300 hover:shadow-md">
                   <div className="px-5 py-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center shadow-sm"><User className="w-4 h-4 text-white" /></div>
                     <h2 className="text-base font-semibold text-slate-900">Kunde</h2>
@@ -1014,7 +1014,7 @@ export default function Home() {
               </div>
 
               {/* Positionen */}
-              <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden transition-shadow duration-300 hover:shadow-md">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><ShoppingCart className="w-4 h-4 text-slate-600" /></div>
@@ -1035,22 +1035,22 @@ export default function Home() {
                           return (
                             <motion.div key={pos.id} initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95, y: -20 }} layout transition={{ duration: 0.2 }}
-                              className={`p-4 rounded-xl border transition-colors ${isComplete ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200 bg-slate-50/30'}`}>
+                              className={`p-4 rounded-xl border transition-all duration-200 ${isComplete ? 'border-emerald-200/80 bg-emerald-50/40 shadow-sm shadow-emerald-100' : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50/80 hover:border-slate-300'}`}>
                               <TypPillSelector value={pos.typ} onChange={(typ) => updatePosition(pos.id, { typ })} />
                               <div className="grid grid-cols-12 gap-2">
                                 <div className="col-span-12 lg:col-span-5">
                                   <input type="text" value={pos.bezeichnung} onChange={e => updatePosition(pos.id, { bezeichnung: e.target.value })}
                                     placeholder="Leistungsbeschreibung..."
-                                    className="w-full min-h-[44px] h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm placeholder:text-slate-400 transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                                    className="w-full min-h-[44px] h-10 px-3 rounded-lg border border-slate-200/80 bg-slate-50/80 text-slate-900 text-sm placeholder:text-slate-400 transition-all duration-200 outline-none ring-1 ring-transparent hover:border-slate-300 hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 focus:shadow-sm" />
                                 </div>
                                 <div className="col-span-4 lg:col-span-1">
                                   <input type="number" value={pos.menge} onChange={e => updatePosition(pos.id, { menge: parseFloat(e.target.value) || 0 })}
                                     min="0" step="0.5"
-                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-center tabular-nums transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200/80 bg-slate-50/80 text-slate-900 text-sm text-center tabular-nums transition-all duration-200 outline-none ring-1 ring-transparent hover:border-slate-300 hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 focus:shadow-sm" />
                                 </div>
                                 <div className="col-span-4 lg:col-span-1">
                                   <select value={pos.einheit} onChange={e => updatePosition(pos.id, { einheit: e.target.value })}
-                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm transition-all outline-none cursor-pointer hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10">
+                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200/80 bg-slate-50/80 text-slate-900 text-sm transition-all duration-200 outline-none cursor-pointer ring-1 ring-transparent hover:border-slate-300 hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 focus:shadow-sm">
                                     {EINHEIT_OPTIONS.map(e => <option key={e}>{e}</option>)}
                                   </select>
                                 </div>
@@ -1058,20 +1058,21 @@ export default function Home() {
                                   <div className="relative">
                                     <input type="number" value={pos.preis} onChange={e => updatePosition(pos.id, { preis: parseFloat(e.target.value) || 0 })}
                                       min="0" step="0.01" placeholder="0,00"
-                                      className="w-full min-h-[44px] h-10 px-2 pr-6 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-right tabular-nums transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                                      className="w-full min-h-[44px] h-10 px-2 pr-6 rounded-lg border border-slate-200/80 bg-slate-50/80 text-slate-900 text-sm text-right tabular-nums transition-all duration-200 outline-none ring-1 ring-transparent hover:border-slate-300 hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 focus:shadow-sm" />
                                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">€</span>
                                   </div>
                                 </div>
                                 <div className="col-span-6 lg:col-span-1">
                                   <select value={pos.ust} onChange={e => updatePosition(pos.id, { ust: parseInt(e.target.value) })}
-                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-center transition-all outline-none cursor-pointer hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10">
+                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200/80 bg-slate-50/80 text-slate-900 text-sm text-center transition-all duration-200 outline-none cursor-pointer ring-1 ring-transparent hover:border-slate-300 hover:bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 focus:shadow-sm">
                                     {UST_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                   </select>
                                 </div>
                                 <div className="col-span-6 lg:col-span-2 flex items-center justify-end gap-2">
                                   <span className="font-semibold text-slate-900 tabular-nums text-sm">{formatCurrency(netto)} €</span>
                                   <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => removePosition(pos.id)}
-                                    className="p-2 min-h-[44px] min-w-[44px] rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center">
+                                    aria-label="Position löschen"
+                                    className="p-2 min-h-[44px] min-w-[44px] rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all duration-200 flex items-center justify-center">
                                     <Trash2 className="w-4 h-4" />
                                   </motion.button>
                                 </div>
