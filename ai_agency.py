@@ -35,16 +35,32 @@ try:
     init(autoreset=True)
 except ImportError:
     print("Installing colorama...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "colorama", "-q"])
+    subprocess.run([sys.executable, "-m", "pip", "install", "colorama", "--break-system-packages", "-q"])
     from colorama import init, Fore, Style
     init(autoreset=True)
+
+# python-dotenv für .env Support
+try:
+    from dotenv import load_dotenv
+    # Lade .env aus dem Projekt-Verzeichnis
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✓ .env geladen aus {env_path}")
+except ImportError:
+    print("Installing python-dotenv...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "python-dotenv", "--break-system-packages", "-q"])
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
 
 # Anthropic SDK
 try:
     import anthropic
 except ImportError:
     print("Installing anthropic...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "anthropic", "-q"])
+    subprocess.run([sys.executable, "-m", "pip", "install", "anthropic", "--break-system-packages", "-q"])
     import anthropic
 
 # ============================================================================
