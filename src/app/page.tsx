@@ -4,8 +4,8 @@ import { useState, useCallback, ChangeEvent, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText, Plus, Trash2, Download, CheckCircle2, Building2, User,
-  Receipt, ShoppingCart, Shield, Sparkles, Zap, RotateCcw, Copy,
-  Check, FileSpreadsheet, Printer, Save, FilePlus, X, AlertTriangle
+  Receipt, ShoppingCart, Shield, Sparkles, Zap, Copy,
+  Check, FileSpreadsheet, Printer, FilePlus, X, AlertTriangle
 } from 'lucide-react';
 
 // ============================================================================
@@ -310,7 +310,6 @@ const generateXRechnungXML = (rechnung: Rechnung, verkaeufer: Verkaeufer, kaeufe
 // SUB-COMPONENTS
 // ============================================================================
 
-// Toast Notification Component
 function Toast({ message, type, onClose }: { message: string; type: string; onClose: () => void }) {
   useEffect(() => {
     const timer = setTimeout(onClose, 3000);
@@ -337,7 +336,6 @@ function Toast({ message, type, onClose }: { message: string; type: string; onCl
   );
 }
 
-// Confirmation Dialog
 function ConfirmDialog({ title, message, onConfirm, onCancel }: {
   title: string; message: string; onConfirm: () => void; onCancel: () => void;
 }) {
@@ -364,11 +362,11 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }: {
         </div>
         <p className="text-slate-600 mb-6">{message}</p>
         <div className="flex gap-3 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-medium">
+          <button onClick={onCancel} className="px-4 py-2.5 min-h-[44px] rounded-xl text-slate-600 hover:bg-slate-100 font-medium">
             Abbrechen
           </button>
-          <button onClick={onConfirm} className="px-4 py-2 rounded-xl bg-red-600 text-white font-medium hover:bg-red-700">
-            Ja, löschen
+          <button onClick={onConfirm} className="px-4 py-2.5 min-h-[44px] rounded-xl bg-red-600 text-white font-medium hover:bg-red-700">
+            Ja, zurücksetzen
           </button>
         </div>
       </motion.div>
@@ -376,10 +374,9 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }: {
   );
 }
 
-// Progress Bar
 function ProgressBar({ progress }: { progress: number }) {
   return (
-    <div className="h-1 bg-slate-100 w-full overflow-hidden print:hidden">
+    <div className="h-1 bg-slate-100 w-full overflow-hidden">
       <motion.div
         className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"
         initial={{ width: 0 }}
@@ -390,7 +387,6 @@ function ProgressBar({ progress }: { progress: number }) {
   );
 }
 
-// Form Input with validation
 function FormInput({ label, value, onChange, onBlur, required = false, showError = false, type = 'text',
   placeholder = '', className = '', validate }: {
   label: string; value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void;
@@ -411,7 +407,7 @@ function FormInput({ label, value, onChange, onBlur, required = false, showError
         onChange={onChange}
         onBlur={onBlur}
         placeholder={placeholder}
-        className={`w-full h-11 px-4 rounded-xl border text-slate-900 text-base placeholder:text-slate-400 transition-all duration-200 ease-out outline-none ${
+        className={`w-full min-h-[44px] h-11 px-4 rounded-xl border text-slate-900 text-base placeholder:text-slate-400 transition-all duration-200 ease-out outline-none ${
           hasError || hasValidationError
             ? 'bg-red-50 border-red-300 focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10'
             : 'bg-slate-50 border-slate-200 hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10'
@@ -422,7 +418,6 @@ function FormInput({ label, value, onChange, onBlur, required = false, showError
   );
 }
 
-// Typ Pill Selector
 function TypPillSelector({ value, onChange }: { value: PositionTyp; onChange: (typ: PositionTyp) => void }) {
   const colorClasses: Record<string, { active: string; inactive: string }> = {
     blue: { active: 'bg-blue-500 text-white shadow-sm', inactive: 'text-blue-600 hover:bg-blue-50' },
@@ -440,7 +435,7 @@ function TypPillSelector({ value, onChange }: { value: PositionTyp; onChange: (t
           onClick={() => onChange(opt.value)}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors duration-200 ${
+          className={`px-3 py-1.5 min-h-[32px] rounded-full text-xs font-medium transition-colors duration-200 ${
             value === opt.value ? colorClasses[opt.color].active : colorClasses[opt.color].inactive
           }`}
         >
@@ -451,7 +446,6 @@ function TypPillSelector({ value, onChange }: { value: PositionTyp; onChange: (t
   );
 }
 
-// Empty State
 function EmptyState({ onAddPosition }: { onAddPosition: () => void }) {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -464,7 +458,7 @@ function EmptyState({ onAddPosition }: { onAddPosition: () => void }) {
         Fügen Sie Ihre erste Position hinzu, um mit der Rechnungserstellung zu beginnen.
       </p>
       <motion.button onClick={onAddPosition} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-slate-900 text-white font-medium hover:bg-slate-800">
+        className="flex items-center gap-2 px-6 py-3 min-h-[44px] rounded-xl bg-slate-900 text-white font-medium hover:bg-slate-800">
         <Plus className="w-4 h-4" />
         Erste Position hinzufügen
       </motion.button>
@@ -472,18 +466,17 @@ function EmptyState({ onAddPosition }: { onAddPosition: () => void }) {
   );
 }
 
-// Invoice Preview Component (DIN 5008)
 function InvoicePreview({ rechnung, verkaeufer, kaeufer, positionen, summen, brutto }: {
   rechnung: Rechnung; verkaeufer: Verkaeufer; kaeufer: Kaeufer;
   positionen: Position[]; summen: Summen; brutto: number;
 }) {
   return (
     <div
-      className="bg-white mx-auto print:mx-0 print:shadow-none print:w-full invoice-paper"
+      className="bg-white mx-auto invoice-paper"
       style={{ width: '210mm', minHeight: '297mm', padding: '20mm', boxSizing: 'border-box' }}
     >
       {/* Absender-Rücksendezeile */}
-      <p className="text-[9px] text-gray-400 underline decoration-gray-300 underline-offset-2 mb-2 print:text-black print:no-underline">
+      <p className="text-[9px] text-gray-400 underline decoration-gray-300 underline-offset-2 mb-2 print:text-gray-500 print:no-underline">
         {verkaeufer.firma || 'Firma'} · {verkaeufer.strasse || 'Straße'} · {verkaeufer.plz} {verkaeufer.ort}
       </p>
 
@@ -559,7 +552,7 @@ function InvoicePreview({ rechnung, verkaeufer, kaeufer, positionen, summen, bru
 
       {/* §35a Ausweisung */}
       {(summen.lohn > 0 || summen.material > 0) && (
-        <div className="border border-gray-300 rounded p-3 text-[8pt] print:border-gray-400" style={{ marginBottom: '8mm' }}>
+        <div className="border border-gray-300 rounded p-3 text-[8pt]" style={{ marginBottom: '8mm' }}>
           <p className="font-semibold text-gray-700 mb-1">Ausweisung gemäß §35a EStG (Handwerkerleistungen):</p>
           <div className="flex gap-6 text-gray-600">
             <span>Lohnkosten: <strong className="text-gray-900 tabular-nums">{formatCurrency(summen.lohn)} €</strong></span>
@@ -578,8 +571,8 @@ function InvoicePreview({ rechnung, verkaeufer, kaeufer, positionen, summen, bru
       <div style={{ minHeight: '15mm' }} />
 
       {/* Footer */}
-      <div className="border-t border-gray-300 pt-4 mt-auto print:border-gray-400">
-        <div className="grid grid-cols-3 gap-4 text-[8pt] text-gray-500 print:text-gray-700">
+      <div className="border-t border-gray-300 pt-4 mt-auto">
+        <div className="grid grid-cols-3 gap-4 text-[8pt] text-gray-500">
           <div>
             <p className="font-semibold text-gray-700 mb-1">{verkaeufer.firma}</p>
             <p>{verkaeufer.strasse}</p>
@@ -787,7 +780,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 print:bg-white print:min-h-0">
       {/* Toast Container */}
-      <div className="fixed bottom-4 right-4 z-[90] flex flex-col gap-2 print:hidden">
+      <div className="fixed bottom-20 lg:bottom-4 right-4 z-[90] flex flex-col gap-2 print:hidden">
         <AnimatePresence>
           {toasts.map(toast => (
             <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />
@@ -799,7 +792,7 @@ export default function Home() {
       <AnimatePresence>
         {showResetConfirm && (
           <ConfirmDialog
-            title="Formular zurücksetzen?"
+            title="Neue Rechnung?"
             message="Alle eingegebenen Daten werden unwiderruflich gelöscht."
             onConfirm={resetForm}
             onCancel={() => setShowResetConfirm(false)}
@@ -823,42 +816,41 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* New Invoice */}
+              {/* New Invoice Button */}
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setShowResetConfirm(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-all"
-                title="Neue Rechnung">
+                className="flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl text-slate-600 hover:bg-slate-100 transition-all"
+                title="Neue Rechnung erstellen">
                 <FilePlus className="w-4 h-4" />
                 <span className="hidden sm:inline text-sm font-medium">Neu</span>
               </motion.button>
 
               {/* Print */}
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                onClick={handlePrint} className="p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 transition-all" title="Drucken">
+                onClick={handlePrint} className="p-2.5 min-h-[44px] min-w-[44px] rounded-xl text-slate-500 hover:bg-slate-100 transition-all flex items-center justify-center" title="Drucken">
                 <Printer className="w-4 h-4" />
               </motion.button>
 
               {/* Demo */}
               <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={fillExampleData}
-                className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all">
+                className="hidden sm:flex items-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all">
                 <Sparkles className="w-4 h-4" />
                 Demo
               </motion.button>
 
-              {/* Export Button */}
-              <div className="relative group">
+              {/* Export Button - Desktop */}
+              <div className="relative group hidden sm:block">
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={downloadXML}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                  className={`flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl font-semibold text-sm transition-all ${
                     isValid ? 'bg-emerald-600 text-white shadow-md hover:bg-emerald-700 hover:shadow-lg' : 'bg-slate-200 text-slate-500 cursor-pointer hover:bg-slate-300'
                   }`}>
                   <Download className="w-4 h-4" />
-                  <span className="hidden sm:inline">XRechnung speichern</span>
-                  <span className="sm:hidden">XML</span>
+                  <span>XRechnung (Pflicht) speichern</span>
                 </motion.button>
                 {/* Tooltip */}
-                <div className="absolute top-full right-0 mt-2 w-64 p-3 bg-slate-900 text-white text-xs rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all shadow-xl z-50">
-                  <p className="font-medium mb-1">Pflicht ab 01.01.2025</p>
-                  <p className="text-slate-300">XRechnung ist das gesetzlich vorgeschriebene Format für B2B-Rechnungen in Deutschland.</p>
+                <div className="absolute top-full right-0 mt-2 w-72 p-3 bg-slate-900 text-white text-xs rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all shadow-xl z-50 pointer-events-none">
+                  <p className="font-semibold mb-1">Pflicht ab 01.01.2025</p>
+                  <p className="text-slate-300">XRechnung ist das gesetzlich vorgeschriebene Format für B2B-Rechnungen in Deutschland. Ohne XRechnung kann Ihr Kunde die Rechnung nicht verarbeiten.</p>
                 </div>
               </div>
             </div>
@@ -905,12 +897,12 @@ export default function Home() {
           </div>
           {isValid && (
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={copyXML}
-              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-all">
+              className="hidden sm:flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-all">
               <Copy className="w-4 h-4" />
               Kopieren
             </motion.button>
           )}
-          <button onClick={fillExampleData} className="sm:hidden p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+          <button onClick={fillExampleData} className="sm:hidden p-2.5 min-h-[44px] min-w-[44px] rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center">
             <Sparkles className="w-5 h-5" />
           </button>
         </motion.div>
@@ -919,7 +911,7 @@ export default function Home() {
         <div className="flex gap-1 mb-6 bg-slate-200/50 p-1 rounded-xl w-fit print:hidden">
           {(['eingabe', 'vorschau'] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`relative px-5 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === tab ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'}`}>
+              className={`relative px-5 py-2.5 min-h-[44px] rounded-lg font-medium text-sm transition-all ${activeTab === tab ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'}`}>
               {activeTab === tab && (
                 <motion.div layoutId="activeTab" className="absolute inset-0 bg-white shadow-sm rounded-lg"
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
@@ -951,7 +943,7 @@ export default function Home() {
                     </label>
                     <input type="date" value={rechnung.faelligkeit}
                       onChange={e => { setFaelligkeitManuallySet(true); setRechnung(prev => ({ ...prev, faelligkeit: e.target.value })); }}
-                      className="w-full h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-base transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                      className="w-full min-h-[44px] h-11 px-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-base transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
                   </div>
                   <FormInput label="Leistungszeitraum" value={rechnung.leistungszeitraum} onChange={handleRechnungChange('leistungszeitraum')} placeholder="Januar 2026" />
                 </div>
@@ -1029,7 +1021,7 @@ export default function Home() {
                     <h2 className="text-base font-semibold text-slate-900">Leistungen & Positionen</h2>
                   </div>
                   <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={addPosition}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+                    className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
                     <Plus className="w-4 h-4" />Position
                   </motion.button>
                 </div>
@@ -1049,16 +1041,16 @@ export default function Home() {
                                 <div className="col-span-12 lg:col-span-5">
                                   <input type="text" value={pos.bezeichnung} onChange={e => updatePosition(pos.id, { bezeichnung: e.target.value })}
                                     placeholder="Leistungsbeschreibung..."
-                                    className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm placeholder:text-slate-400 transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                                    className="w-full min-h-[44px] h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm placeholder:text-slate-400 transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
                                 </div>
                                 <div className="col-span-4 lg:col-span-1">
                                   <input type="number" value={pos.menge} onChange={e => updatePosition(pos.id, { menge: parseFloat(e.target.value) || 0 })}
                                     min="0" step="0.5"
-                                    className="w-full h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-center tabular-nums transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-center tabular-nums transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
                                 </div>
                                 <div className="col-span-4 lg:col-span-1">
                                   <select value={pos.einheit} onChange={e => updatePosition(pos.id, { einheit: e.target.value })}
-                                    className="w-full h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm transition-all outline-none cursor-pointer hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10">
+                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm transition-all outline-none cursor-pointer hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10">
                                     {EINHEIT_OPTIONS.map(e => <option key={e}>{e}</option>)}
                                   </select>
                                 </div>
@@ -1066,20 +1058,20 @@ export default function Home() {
                                   <div className="relative">
                                     <input type="number" value={pos.preis} onChange={e => updatePosition(pos.id, { preis: parseFloat(e.target.value) || 0 })}
                                       min="0" step="0.01" placeholder="0,00"
-                                      className="w-full h-10 px-2 pr-6 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-right tabular-nums transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
+                                      className="w-full min-h-[44px] h-10 px-2 pr-6 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-right tabular-nums transition-all outline-none hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" />
                                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">€</span>
                                   </div>
                                 </div>
                                 <div className="col-span-6 lg:col-span-1">
                                   <select value={pos.ust} onChange={e => updatePosition(pos.id, { ust: parseInt(e.target.value) })}
-                                    className="w-full h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-center transition-all outline-none cursor-pointer hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10">
+                                    className="w-full min-h-[44px] h-10 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 text-sm text-center transition-all outline-none cursor-pointer hover:border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10">
                                     {UST_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                   </select>
                                 </div>
                                 <div className="col-span-6 lg:col-span-2 flex items-center justify-end gap-2">
                                   <span className="font-semibold text-slate-900 tabular-nums text-sm">{formatCurrency(netto)} €</span>
                                   <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} onClick={() => removePosition(pos.id)}
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                                    className="p-2 min-h-[44px] min-w-[44px] rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center">
                                     <Trash2 className="w-4 h-4" />
                                   </motion.button>
                                 </div>
@@ -1094,30 +1086,46 @@ export default function Home() {
               </section>
             </motion.div>
           ) : (
-            /* Vorschau Tab */
+            /* Vorschau Tab - Mobile scrollable container */
             <motion.div key="vorschau" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="print:block">
-              <div className="bg-slate-200 rounded-2xl p-4 sm:p-6 print:bg-white print:p-0 print:rounded-none">
-                <InvoicePreview rechnung={rechnung} verkaeufer={verkaeufer} kaeufer={kaeufer}
-                  positionen={positionen} summen={summen} brutto={brutto} />
+              {/* Mobile: Scrollable container for A4 preview */}
+              <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 print:overflow-visible print:mx-0 print:px-0">
+                <div className="bg-slate-200 rounded-2xl p-4 min-w-[240mm] md:min-w-0 print:bg-transparent print:p-0 print:rounded-none print:min-w-0">
+                  <InvoicePreview rechnung={rechnung} verkaeufer={verkaeufer} kaeufer={kaeufer}
+                    positionen={positionen} summen={summen} brutto={brutto} />
+                </div>
               </div>
+              {/* Mobile hint */}
+              <p className="text-center text-xs text-slate-400 mt-3 md:hidden print:hidden">
+                Wischen Sie horizontal, um das gesamte Dokument zu sehen
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
 
-      {/* Mobile Sticky Footer */}
+      {/* Mobile Sticky Footer with Export Button */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-gradient-to-br from-slate-800 to-slate-900 shadow-2xl border-t border-slate-700 print:hidden">
         <div className="px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
               <p className="text-xs text-slate-400 mb-0.5">Gesamtbetrag</p>
               <p className="text-xl font-bold text-emerald-400 tabular-nums">{formatCurrency(brutto)} €</p>
             </div>
-            <div className="text-right text-xs text-slate-400">
-              <p>Netto: <span className="text-white tabular-nums">{formatCurrency(summen.netto)} €</span></p>
-              <p>USt: <span className="text-white tabular-nums">{formatCurrency(summen.ust19 + summen.ust7)} €</span></p>
-            </div>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={downloadXML}
+              className={`flex items-center gap-2 px-5 py-3 min-h-[48px] rounded-xl font-semibold text-sm transition-all ${
+                isValid
+                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                  : 'bg-slate-600 text-slate-300'
+              }`}
+            >
+              <Download className="w-4 h-4" />
+              <span>XRechnung speichern</span>
+            </motion.button>
           </div>
         </div>
       </div>
@@ -1135,14 +1143,74 @@ export default function Home() {
         </div>
       </footer>
 
-      {/* Print Styles */}
+      {/* Print Styles - Comprehensive */}
       <style jsx global>{`
         @media print {
-          @page { size: A4; margin: 10mm; }
-          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .print\\:hidden { display: none !important; }
-          .print\\:block { display: block !important; }
-          .invoice-paper { box-shadow: none !important; }
+          /* Page setup - no browser chrome */
+          @page {
+            size: A4;
+            margin: 0;
+          }
+
+          /* Reset everything */
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* Hide everything except invoice */
+          body > div > *:not(main),
+          header,
+          footer,
+          nav,
+          .print\\:hidden,
+          button,
+          [role="button"] {
+            display: none !important;
+          }
+
+          /* Show main content */
+          main {
+            display: block !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            max-width: none !important;
+          }
+
+          /* Invoice paper styles */
+          .invoice-paper {
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 15mm !important;
+            width: 100% !important;
+            min-height: auto !important;
+            background: white !important;
+          }
+
+          /* Ensure black text */
+          .invoice-paper * {
+            color: black !important;
+          }
+
+          .invoice-paper .text-gray-400,
+          .invoice-paper .text-gray-500,
+          .invoice-paper .text-gray-600,
+          .invoice-paper .text-gray-700 {
+            color: #374151 !important;
+          }
+
+          /* Borders for print */
+          .invoice-paper .border-gray-200,
+          .invoice-paper .border-gray-300 {
+            border-color: #9ca3af !important;
+          }
+
+          .invoice-paper .border-gray-900 {
+            border-color: black !important;
+          }
         }
       `}</style>
     </div>
