@@ -8,113 +8,41 @@ import {
   Receipt, ShoppingCart, Shield, Sparkles, Zap, Copy,
   FileSpreadsheet, Printer, FilePlus, X, AlertTriangle, Archive,
   Loader2, FileDown, Settings, RotateCcw, Send, Banknote, Search,
-  ChevronRight, Clock, MoreVertical
+  ChevronRight, Clock, MoreVertical, Users, Package, FileCheck,
+  ArrowRightLeft
 } from 'lucide-react';
 import {
   db, type ArchivedInvoice, type InvoiceData, type InvoiceStatus,
   type InvoiceNumberSettings, generateInvoiceNumber, getNextInvoiceNumber,
-  checkDuplicateInvoiceNumber, migrateFromLocalStorage, getDefaultSettings
+  checkDuplicateInvoiceNumber, migrateFromLocalStorage, getDefaultSettings,
+  generateOfferNumber, getNextOfferNumber, getDefaultOfferSettings,
+  saveCustomer, saveArticle
 } from '@/lib/db';
-
-// ============================================================================
-// TYPES
-// ============================================================================
-
-type PositionTyp = 'L' | 'M' | 'F' | 'S';
-
-interface Position {
-  id: string;
-  bezeichnung: string;
-  typ: PositionTyp;
-  menge: number;
-  einheit: string;
-  preis: number;
-  ust: number;
-}
-
-interface Verkaeufer {
-  firma: string;
-  strasse: string;
-  plz: string;
-  ort: string;
-  ustId: string;
-  steuernummer: string;
-  iban: string;
-  bic: string;
-  bank: string;
-  handelsregister: string;
-  telefon: string;
-  email: string;
-}
-
-interface Kaeufer {
-  firma: string;
-  strasse: string;
-  plz: string;
-  ort: string;
-  ustId: string;
-  ansprechpartner: string;
-  email: string;
-  kundennummer: string;
-}
-
-interface Rechnung {
-  nummer: string;
-  datum: string;
-  faelligkeit: string;
-  leistungszeitraum: string;
-  art: string;
-  leitwegId: string;
-  bestellnummer: string;
-}
-
-interface FormState {
-  rechnung: Rechnung;
-  verkaeufer: Verkaeufer;
-  kaeufer: Kaeufer;
-  positionen: Position[];
-}
-
-interface Summen {
-  netto: number;
-  lohn: number;
-  material: number;
-  ust19: number;
-  ust7: number;
-}
-
-interface ToastMessage {
-  id: string;
-  message: string;
-  type: 'success' | 'error' | 'info';
-}
+import type {
+  Position, Verkaeufer, Kaeufer, Rechnung, Summen, ToastMessage,
+  PositionTyp, DocumentType, OfferStatus, Customer, Article, ValidationResult
+} from '@/lib/types';
+import {
+  TYP_OPTIONS, EINHEIT_OPTIONS, UST_OPTIONS, EINHEIT_MAP,
+  STATUS_CONFIG, OFFER_STATUS_CONFIG, DOCUMENT_TYPE_CONFIG
+} from '@/lib/types';
+import { validateXRechnung, validateFormBasic, calculateProgress } from '@/lib/validation';
+import { generateXRechnungXML } from '@/lib/xrechnung';
+import { generateZUGFeRDXML, createZUGFeRDPDF } from '@/lib/zugferd';
+import { CustomerModal, customerToKaeufer, kaeuferToCustomer } from '@/components/CustomerModal';
+import { ArticleModal, articleToPosition, positionToArticle } from '@/components/ArticleModal';
+import { ValidationModal } from '@/components/ValidationModal';
+import { InvoicePreview } from '@/components/InvoicePreview';
+import { ExportDropdown } from '@/components/ExportDropdown';
+import { UpgradeModal } from '@/components/UpgradeModal';
+import { SettingsModal } from '@/components/SettingsModal';
+import { usePro } from '@/lib/usePro';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
 const STORAGE_KEY = 'e-rechnung-formdata';
-
-const EINHEIT_OPTIONS = ['Std', 'Stk', 'm', 'm²', 'm³', 'kg', 'Tag', 'Ltr', 'psch'];
-const UST_OPTIONS = [{ value: 19, label: '19%' }, { value: 7, label: '7%' }, { value: 0, label: '0%' }];
-
-const EINHEIT_MAP: Record<string, string> = {
-  'Std': 'HUR', 'Stk': 'H87', 'm': 'MTR', 'm²': 'MTK',
-  'm³': 'MTQ', 'kg': 'KGM', 'Tag': 'DAY', 'Ltr': 'LTR', 'psch': 'LS'
-};
-
-const TYP_OPTIONS: { value: PositionTyp; label: string; color: string }[] = [
-  { value: 'L', label: 'Lohn', color: 'blue' },
-  { value: 'M', label: 'Material', color: 'amber' },
-  { value: 'F', label: 'Fahrt', color: 'purple' },
-  { value: 'S', label: 'Sonst.', color: 'slate' }
-];
-
-const STATUS_CONFIG: Record<InvoiceStatus, { label: string; color: string; icon: typeof FileText }> = {
-  draft: { label: 'Entwurf', color: 'slate', icon: FileText },
-  sent: { label: 'Gesendet', color: 'blue', icon: Send },
-  paid: { label: 'Bezahlt', color: 'emerald', icon: Banknote }
-};
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -138,10 +66,6 @@ const addDays = (dateStr: string, days: number): string => {
   date.setDate(date.getDate() + days);
   return date.toISOString().split('T')[0];
 };
-
-const escapeXML = (str: string): string =>
-  str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
 const isValidEmail = (email: string): boolean =>
   !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -188,142 +112,6 @@ const calculateSummen = (positionen: Position[]): Summen => {
   }, { netto: 0, lohn: 0, material: 0, ust19: 0, ust7: 0 });
 };
 
-const validateForm = (rechnung: Rechnung, verkaeufer: Verkaeufer, kaeufer: Kaeufer, positionen: Position[]): string[] => {
-  const errors: string[] = [];
-  if (!rechnung.nummer) errors.push('Rechnungsnummer');
-  if (!rechnung.datum) errors.push('Rechnungsdatum');
-  if (!verkaeufer.firma) errors.push('Ihre Firma');
-  if (!verkaeufer.strasse) errors.push('Ihre Straße');
-  if (!verkaeufer.plz || !verkaeufer.ort) errors.push('Ihre PLZ/Ort');
-  if (!verkaeufer.ustId && !verkaeufer.steuernummer) errors.push('USt-ID oder Steuernummer');
-  if (!kaeufer.firma) errors.push('Kunde: Firma');
-  if (!kaeufer.strasse) errors.push('Kunde: Straße');
-  if (!kaeufer.plz || !kaeufer.ort) errors.push('Kunde: PLZ/Ort');
-  if (!positionen.some(p => p.bezeichnung && p.menge > 0 && p.preis > 0)) errors.push('Mind. 1 Position');
-  return errors;
-};
-
-const calculateProgress = (rechnung: Rechnung, verkaeufer: Verkaeufer, kaeufer: Kaeufer, positionen: Position[]): number => {
-  let filled = 0;
-  if (rechnung.nummer) filled++;
-  if (rechnung.datum) filled++;
-  if (verkaeufer.firma) filled++;
-  if (verkaeufer.strasse) filled++;
-  if (verkaeufer.plz && verkaeufer.ort) filled++;
-  if (verkaeufer.ustId || verkaeufer.steuernummer) filled++;
-  if (kaeufer.firma) filled++;
-  if (kaeufer.strasse) filled++;
-  if (kaeufer.plz && kaeufer.ort) filled++;
-  if (positionen.some(p => p.bezeichnung && p.menge > 0 && p.preis > 0)) filled++;
-  return Math.round((filled / 10) * 100);
-};
-
-// ============================================================================
-// XML GENERATOR
-// ============================================================================
-
-const generateXRechnungXML = (rechnung: Rechnung, verkaeufer: Verkaeufer, kaeufer: Kaeufer, positionen: Position[]): string => {
-  let netto19 = 0, netto7 = 0, netto0 = 0;
-
-  positionen.forEach(pos => {
-    if (pos.bezeichnung && pos.menge > 0 && pos.preis > 0) {
-      const betrag = pos.menge * pos.preis;
-      if (pos.ust === 19) netto19 += betrag;
-      else if (pos.ust === 7) netto7 += betrag;
-      else netto0 += betrag;
-    }
-  });
-
-  const nettoGesamt = netto19 + netto7 + netto0;
-  const ust19 = netto19 * 0.19;
-  const ust7 = netto7 * 0.07;
-  const brutto = nettoGesamt + ust19 + ust7;
-
-  let positionenXML = '';
-  let posNr = 0;
-  positionen.forEach(pos => {
-    if (pos.bezeichnung && pos.menge > 0 && pos.preis > 0) {
-      posNr++;
-      const betrag = pos.menge * pos.preis;
-      positionenXML += `
-    <cac:InvoiceLine>
-        <cbc:ID>${posNr}</cbc:ID>
-        <cbc:InvoicedQuantity unitCode="${EINHEIT_MAP[pos.einheit] || 'H87'}">${pos.menge.toFixed(2)}</cbc:InvoicedQuantity>
-        <cbc:LineExtensionAmount currencyID="EUR">${betrag.toFixed(2)}</cbc:LineExtensionAmount>
-        <cac:Item>
-            <cbc:Name>${escapeXML(pos.bezeichnung)}</cbc:Name>
-            <cac:ClassifiedTaxCategory>
-                <cbc:ID>S</cbc:ID>
-                <cbc:Percent>${pos.ust}</cbc:Percent>
-                <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-            </cac:ClassifiedTaxCategory>
-        </cac:Item>
-        <cac:Price><cbc:PriceAmount currencyID="EUR">${pos.preis.toFixed(2)}</cbc:PriceAmount></cac:Price>
-    </cac:InvoiceLine>`;
-    }
-  });
-
-  let taxSubtotals = '';
-  if (netto19 > 0) {
-    taxSubtotals += `
-        <cac:TaxSubtotal>
-            <cbc:TaxableAmount currencyID="EUR">${netto19.toFixed(2)}</cbc:TaxableAmount>
-            <cbc:TaxAmount currencyID="EUR">${ust19.toFixed(2)}</cbc:TaxAmount>
-            <cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>
-        </cac:TaxSubtotal>`;
-  }
-  if (netto7 > 0) {
-    taxSubtotals += `
-        <cac:TaxSubtotal>
-            <cbc:TaxableAmount currencyID="EUR">${netto7.toFixed(2)}</cbc:TaxableAmount>
-            <cbc:TaxAmount currencyID="EUR">${ust7.toFixed(2)}</cbc:TaxAmount>
-            <cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>7</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>
-        </cac:TaxSubtotal>`;
-  }
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
-         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
-         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-    <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0</cbc:CustomizationID>
-    <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
-    <cbc:ID>${escapeXML(rechnung.nummer)}</cbc:ID>
-    <cbc:IssueDate>${rechnung.datum}</cbc:IssueDate>
-    ${rechnung.faelligkeit ? `<cbc:DueDate>${rechnung.faelligkeit}</cbc:DueDate>` : ''}
-    <cbc:InvoiceTypeCode>${rechnung.art.substring(0, 3)}</cbc:InvoiceTypeCode>
-    <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
-    <cbc:BuyerReference>${rechnung.leitwegId || 'n/a'}</cbc:BuyerReference>
-    <cac:AccountingSupplierParty><cac:Party>
-        <cac:PostalAddress>
-            <cbc:StreetName>${escapeXML(verkaeufer.strasse)}</cbc:StreetName>
-            <cbc:CityName>${escapeXML(verkaeufer.ort)}</cbc:CityName>
-            <cbc:PostalZone>${escapeXML(verkaeufer.plz)}</cbc:PostalZone>
-            <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country>
-        </cac:PostalAddress>
-        ${verkaeufer.ustId ? `<cac:PartyTaxScheme><cbc:CompanyID>${escapeXML(verkaeufer.ustId)}</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>` : ''}
-        <cac:PartyLegalEntity><cbc:RegistrationName>${escapeXML(verkaeufer.firma)}</cbc:RegistrationName></cac:PartyLegalEntity>
-    </cac:Party></cac:AccountingSupplierParty>
-    <cac:AccountingCustomerParty><cac:Party>
-        <cac:PostalAddress>
-            <cbc:StreetName>${escapeXML(kaeufer.strasse)}</cbc:StreetName>
-            <cbc:CityName>${escapeXML(kaeufer.ort)}</cbc:CityName>
-            <cbc:PostalZone>${escapeXML(kaeufer.plz)}</cbc:PostalZone>
-            <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country>
-        </cac:PostalAddress>
-        ${kaeufer.ustId ? `<cac:PartyTaxScheme><cbc:CompanyID>${escapeXML(kaeufer.ustId)}</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>` : ''}
-        <cac:PartyLegalEntity><cbc:RegistrationName>${escapeXML(kaeufer.firma)}</cbc:RegistrationName></cac:PartyLegalEntity>
-    </cac:Party></cac:AccountingCustomerParty>
-    ${verkaeufer.iban ? `<cac:PaymentMeans><cbc:PaymentMeansCode>58</cbc:PaymentMeansCode><cac:PayeeFinancialAccount><cbc:ID>${verkaeufer.iban.replace(/\s/g, '')}</cbc:ID></cac:PayeeFinancialAccount></cac:PaymentMeans>` : ''}
-    <cac:TaxTotal><cbc:TaxAmount currencyID="EUR">${(ust19 + ust7).toFixed(2)}</cbc:TaxAmount>${taxSubtotals}</cac:TaxTotal>
-    <cac:LegalMonetaryTotal>
-        <cbc:LineExtensionAmount currencyID="EUR">${nettoGesamt.toFixed(2)}</cbc:LineExtensionAmount>
-        <cbc:TaxExclusiveAmount currencyID="EUR">${nettoGesamt.toFixed(2)}</cbc:TaxExclusiveAmount>
-        <cbc:TaxInclusiveAmount currencyID="EUR">${brutto.toFixed(2)}</cbc:TaxInclusiveAmount>
-        <cbc:PayableAmount currencyID="EUR">${brutto.toFixed(2)}</cbc:PayableAmount>
-    </cac:LegalMonetaryTotal>${positionenXML}
-</Invoice>`;
-};
-
 // ============================================================================
 // SUB-COMPONENTS
 // ============================================================================
@@ -341,11 +129,13 @@ function Toast({ message, type, onClose }: { message: string; type: string; onCl
       exit={{ opacity: 0, y: 20, scale: 0.9 }}
       className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg ${
         type === 'success' ? 'bg-emerald-600 text-white' :
-        type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'
+        type === 'error' ? 'bg-red-600 text-white' :
+        type === 'warning' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-white'
       }`}
     >
       {type === 'success' && <CheckCircle2 className="w-5 h-5" />}
       {type === 'error' && <AlertTriangle className="w-5 h-5" />}
+      {type === 'warning' && <AlertTriangle className="w-5 h-5" />}
       <span className="text-sm font-medium">{message}</span>
       <button onClick={onClose} className="ml-2 p-1 hover:bg-white/20 rounded">
         <X className="w-4 h-4" />
@@ -484,7 +274,6 @@ function TypPillSelector({ value, onChange }: { value: PositionTyp; onChange: (t
 
 function StatusBadge({ status, size = 'md' }: { status: InvoiceStatus; size?: 'sm' | 'md' }) {
   const config = STATUS_CONFIG[status];
-  const Icon = config.icon;
   const colorClasses: Record<string, string> = {
     slate: 'bg-slate-100 text-slate-600',
     blue: 'bg-blue-100 text-blue-600',
@@ -495,7 +284,17 @@ function StatusBadge({ status, size = 'md' }: { status: InvoiceStatus; size?: 's
     <span className={`inline-flex items-center gap-1 rounded-full font-medium ${colorClasses[config.color] || colorClasses.slate} ${
       size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
     }`}>
-      <Icon className={size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+      {config.label}
+    </span>
+  );
+}
+
+function DocumentTypeBadge({ type }: { type: DocumentType }) {
+  const config = DOCUMENT_TYPE_CONFIG[type];
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+      type === 'invoice' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+    }`}>
       {config.label}
     </span>
   );
@@ -521,22 +320,28 @@ function EmptyState({ onAddPosition }: { onAddPosition: () => void }) {
   );
 }
 
-function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatusChange, invoices, searchTerm, setSearchTerm }: {
+function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatusChange, onConvertToInvoice, invoices, searchTerm, setSearchTerm, filterType, setFilterType }: {
   isOpen: boolean;
   onClose: () => void;
   onLoad: (invoice: ArchivedInvoice) => void;
   onDuplicate: (invoice: ArchivedInvoice) => void;
   onDelete: (id: string) => void;
   onStatusChange: (id: string, status: InvoiceStatus) => void;
+  onConvertToInvoice: (invoice: ArchivedInvoice) => void;
   invoices: ArchivedInvoice[];
   searchTerm: string;
   setSearchTerm: (term: string) => void;
+  filterType: 'all' | DocumentType;
+  setFilterType: (type: 'all' | DocumentType) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
-  const filteredInvoices = invoices.filter(inv =>
-    inv.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    inv.customerName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+
+  const filteredInvoices = invoices.filter(inv => {
+    const matchesSearch = inv.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      inv.customerName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = filterType === 'all' || inv.documentType === filterType;
+    return matchesSearch && matchesType;
+  });
 
   if (!isOpen) return null;
 
@@ -562,8 +367,8 @@ function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatus
               <Archive className="w-5 h-5 text-slate-600" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Rechnungsarchiv</h2>
-              <p className="text-sm text-slate-500">{invoices.length} Rechnungen</p>
+              <h2 className="text-lg font-semibold text-slate-900">Dokument-Archiv</h2>
+              <p className="text-sm text-slate-500">{invoices.length} Dokumente</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
@@ -571,8 +376,8 @@ function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatus
           </button>
         </div>
 
-        {/* Search */}
-        <div className="p-4 border-b border-slate-100">
+        {/* Search & Filter */}
+        <div className="p-4 border-b border-slate-100 space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -583,6 +388,34 @@ function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatus
               className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
             />
           </div>
+
+          {/* Type Filter */}
+          <div className="flex gap-1">
+            <button
+              onClick={() => setFilterType('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                filterType === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Alle
+            </button>
+            <button
+              onClick={() => setFilterType('invoice')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                filterType === 'invoice' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+              }`}
+            >
+              Rechnungen
+            </button>
+            <button
+              onClick={() => setFilterType('offer')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                filterType === 'offer' ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+              }`}
+            >
+              Angebote
+            </button>
+          </div>
         </div>
 
         {/* Invoice List */}
@@ -591,7 +424,7 @@ function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatus
             <div className="flex flex-col items-center justify-center py-12 px-4">
               <Archive className="w-12 h-12 text-slate-200 mb-4" />
               <p className="text-slate-500 text-sm">
-                {searchTerm ? 'Keine Rechnungen gefunden' : 'Noch keine Rechnungen archiviert'}
+                {searchTerm ? 'Keine Dokumente gefunden' : 'Noch keine Dokumente archiviert'}
               </p>
             </div>
           ) : (
@@ -608,6 +441,7 @@ function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatus
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-semibold text-slate-900 truncate">{invoice.invoiceNumber}</span>
+                        <DocumentTypeBadge type={invoice.documentType || 'invoice'} />
                         <StatusBadge status={invoice.status} size="sm" />
                       </div>
                       <p className="text-sm text-slate-500 truncate">{invoice.customerName}</p>
@@ -648,6 +482,14 @@ function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatus
                           >
                             <Copy className="w-4 h-4" /> Duplizieren
                           </button>
+                          {invoice.documentType === 'offer' && (
+                            <button
+                              onClick={() => { onConvertToInvoice(invoice); setMenuOpen(null); }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+                            >
+                              <ArrowRightLeft className="w-4 h-4" /> Als Rechnung
+                            </button>
+                          )}
                           <div className="border-t border-slate-100 my-1" />
                           <p className="px-3 py-1 text-xs text-slate-400 font-medium">Status ändern</p>
                           {(['draft', 'sent', 'paid'] as InvoiceStatus[]).map(status => (
@@ -682,11 +524,12 @@ function ArchiveModal({ isOpen, onClose, onLoad, onDuplicate, onDelete, onStatus
   );
 }
 
-function InvoiceNumberSettings({ isOpen, onClose, settings, onSave }: {
+function NumberSettingsModal({ isOpen, onClose, settings, onSave, documentType }: {
   isOpen: boolean;
   onClose: () => void;
   settings: InvoiceNumberSettings;
   onSave: (settings: InvoiceNumberSettings) => void;
+  documentType: DocumentType;
 }) {
   const [localSettings, setLocalSettings] = useState(settings);
 
@@ -719,7 +562,9 @@ function InvoiceNumberSettings({ isOpen, onClose, settings, onSave }: {
           <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
             <Settings className="w-5 h-5 text-blue-600" />
           </div>
-          <h3 className="text-lg font-semibold text-slate-900">Rechnungsnummer-Format</h3>
+          <h3 className="text-lg font-semibold text-slate-900">
+            {documentType === 'invoice' ? 'Rechnungsnummer' : 'Angebotsnummer'}-Format
+          </h3>
         </div>
 
         <div className="space-y-4">
@@ -804,139 +649,6 @@ function InvoiceNumberSettings({ isOpen, onClose, settings, onSave }: {
   );
 }
 
-function InvoicePreview({ rechnung, verkaeufer, kaeufer, positionen, summen, brutto, previewRef }: {
-  rechnung: Rechnung; verkaeufer: Verkaeufer; kaeufer: Kaeufer;
-  positionen: Position[]; summen: Summen; brutto: number; previewRef?: React.RefObject<HTMLDivElement | null>;
-}) {
-  return (
-    <div
-      ref={previewRef}
-      className="bg-white mx-auto invoice-paper"
-      style={{ width: '210mm', minHeight: '297mm', padding: '20mm', boxSizing: 'border-box' }}
-    >
-      {/* Absender-Rücksendezeile */}
-      <p className="text-[9px] text-gray-400 underline decoration-gray-300 underline-offset-2 mb-2 print:text-gray-500 print:no-underline">
-        {verkaeufer.firma || 'Firma'} · {verkaeufer.strasse || 'Straße'} · {verkaeufer.plz} {verkaeufer.ort}
-      </p>
-
-      {/* Adressfeld + Infoblock */}
-      <div className="flex justify-between items-start" style={{ minHeight: '35mm' }}>
-        <div style={{ width: '85mm' }}>
-          <p className="font-semibold text-gray-900 text-[11pt]">{kaeufer.firma || '—'}</p>
-          {kaeufer.ansprechpartner && <p className="text-gray-700 text-[10pt]">{kaeufer.ansprechpartner}</p>}
-          <p className="text-gray-700 text-[10pt]">{kaeufer.strasse || '—'}</p>
-          <p className="text-gray-700 text-[10pt]">{kaeufer.plz} {kaeufer.ort}</p>
-        </div>
-        <div className="text-right" style={{ width: '70mm' }}>
-          <p className="text-[22pt] font-black text-gray-900 tracking-tight leading-none mb-3">RECHNUNG</p>
-          <table className="ml-auto text-[9pt]">
-            <tbody>
-              <tr><td className="text-gray-500 pr-3 py-0.5 text-left">Rechnungs-Nr.:</td><td className="text-gray-900 font-medium tabular-nums text-right">{rechnung.nummer || '—'}</td></tr>
-              <tr><td className="text-gray-500 pr-3 py-0.5 text-left">Datum:</td><td className="text-gray-900 tabular-nums text-right">{formatDate(rechnung.datum)}</td></tr>
-              {rechnung.leistungszeitraum && <tr><td className="text-gray-500 pr-3 py-0.5 text-left">Leistungszeitraum:</td><td className="text-gray-900 text-right">{rechnung.leistungszeitraum}</td></tr>}
-              {kaeufer.kundennummer && <tr><td className="text-gray-500 pr-3 py-0.5 text-left">Kunden-Nr.:</td><td className="text-gray-900 tabular-nums text-right">{kaeufer.kundennummer}</td></tr>}
-              <tr><td className="text-gray-500 pr-3 py-0.5 text-left">Fällig bis:</td><td className="text-gray-900 font-medium tabular-nums text-right">{formatDate(rechnung.faelligkeit)}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Betreffzeile */}
-      <div style={{ marginTop: '12mm', marginBottom: '6mm' }}>
-        <p className="text-[11pt] text-gray-900 font-semibold">
-          Rechnung für erbrachte Leistungen{rechnung.leistungszeitraum && ` – ${rechnung.leistungszeitraum}`}
-        </p>
-      </div>
-
-      {/* Positionen-Tabelle */}
-      <table className="w-full text-[9pt]" style={{ marginBottom: '8mm' }}>
-        <thead>
-          <tr className="border-b-2 border-gray-900">
-            <th className="text-left py-2 font-semibold text-gray-700 w-8">Pos</th>
-            <th className="text-left py-2 font-semibold text-gray-700">Beschreibung</th>
-            <th className="text-right py-2 font-semibold text-gray-700 w-14">Menge</th>
-            <th className="text-right py-2 font-semibold text-gray-700 w-16">E-Preis</th>
-            <th className="text-right py-2 font-semibold text-gray-700 w-18">Betrag</th>
-          </tr>
-        </thead>
-        <tbody>
-          {positionen.filter(p => p.bezeichnung).map((pos, idx) => (
-            <tr key={pos.id} className="border-b border-gray-200">
-              <td className="py-2 text-gray-500 tabular-nums align-top">{idx + 1}</td>
-              <td className="py-2 text-gray-900 align-top">{pos.bezeichnung}</td>
-              <td className="py-2 text-right text-gray-700 tabular-nums align-top">{pos.menge} {pos.einheit}</td>
-              <td className="py-2 text-right text-gray-700 tabular-nums align-top">{formatCurrency(pos.preis)} €</td>
-              <td className="py-2 text-right text-gray-900 font-medium tabular-nums align-top">{formatCurrency(pos.menge * pos.preis)} €</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* Summenblock */}
-      <div className="flex justify-end" style={{ marginBottom: '8mm' }}>
-        <div style={{ width: '65mm' }}>
-          <table className="w-full text-[9pt]">
-            <tbody>
-              <tr><td className="py-1 text-gray-600">Nettobetrag:</td><td className="py-1 text-right text-gray-900 tabular-nums font-medium">{formatCurrency(summen.netto)} €</td></tr>
-              {summen.ust19 > 0 && <tr><td className="py-1 text-gray-600">+ USt 19%:</td><td className="py-1 text-right text-gray-700 tabular-nums">{formatCurrency(summen.ust19)} €</td></tr>}
-              {summen.ust7 > 0 && <tr><td className="py-1 text-gray-600">+ USt 7%:</td><td className="py-1 text-right text-gray-700 tabular-nums">{formatCurrency(summen.ust7)} €</td></tr>}
-              <tr className="border-t-2 border-gray-900">
-                <td className="py-2 text-gray-900 font-bold text-[11pt]">Gesamtbetrag:</td>
-                <td className="py-2 text-right text-gray-900 font-black text-[13pt] tabular-nums">{formatCurrency(brutto)} €</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* §35a Ausweisung */}
-      {(summen.lohn > 0 || summen.material > 0) && (
-        <div className="border border-gray-300 rounded p-3 text-[8pt]" style={{ marginBottom: '8mm' }}>
-          <p className="font-semibold text-gray-700 mb-1">Ausweisung gemäß §35a EStG (Handwerkerleistungen):</p>
-          <div className="flex gap-6 text-gray-600">
-            <span>Lohnkosten: <strong className="text-gray-900 tabular-nums">{formatCurrency(summen.lohn)} €</strong></span>
-            <span>Materialkosten: <strong className="text-gray-900 tabular-nums">{formatCurrency(summen.material)} €</strong></span>
-          </div>
-        </div>
-      )}
-
-      {/* Zahlungshinweis */}
-      <div className="text-[9pt] text-gray-700" style={{ marginBottom: '12mm' }}>
-        <p>Bitte überweisen Sie den Rechnungsbetrag bis zum <strong>{formatDate(rechnung.faelligkeit)}</strong> auf das unten angegebene Konto.</p>
-        <p className="mt-1">Vielen Dank für Ihren Auftrag!</p>
-      </div>
-
-      {/* Spacer */}
-      <div style={{ minHeight: '15mm' }} />
-
-      {/* Footer */}
-      <div className="border-t border-gray-300 pt-4 mt-auto">
-        <div className="grid grid-cols-3 gap-4 text-[8pt] text-gray-500">
-          <div>
-            <p className="font-semibold text-gray-700 mb-1">{verkaeufer.firma}</p>
-            <p>{verkaeufer.strasse}</p>
-            <p>{verkaeufer.plz} {verkaeufer.ort}</p>
-            {verkaeufer.telefon && <p>Tel: {verkaeufer.telefon}</p>}
-            {verkaeufer.email && <p>{verkaeufer.email}</p>}
-          </div>
-          <div>
-            <p className="font-semibold text-gray-700 mb-1">Bankverbindung</p>
-            {verkaeufer.iban && <p>IBAN: {verkaeufer.iban}</p>}
-            {verkaeufer.bic && <p>BIC: {verkaeufer.bic}</p>}
-            {verkaeufer.bank && <p>{verkaeufer.bank}</p>}
-          </div>
-          <div>
-            <p className="font-semibold text-gray-700 mb-1">Steuerdaten</p>
-            {verkaeufer.ustId && <p>USt-IdNr.: {verkaeufer.ustId}</p>}
-            {verkaeufer.steuernummer && <p>St.-Nr.: {verkaeufer.steuernummer}</p>}
-            {verkaeufer.handelsregister && <p>{verkaeufer.handelsregister}</p>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -944,6 +656,9 @@ function InvoicePreview({ rechnung, verkaeufer, kaeufer, positionen, summen, bru
 export default function Home() {
   const today = new Date().toISOString().split('T')[0];
   const in14Days = addDays(today, 14);
+
+  // Document Type State
+  const [documentType, setDocumentType] = useState<DocumentType>('invoice');
 
   // State
   const [activeTab, setActiveTab] = useState<'eingabe' | 'vorschau'>('eingabe');
@@ -959,16 +674,31 @@ export default function Home() {
   // Archive State
   const [showArchive, setShowArchive] = useState(false);
   const [archiveSearchTerm, setArchiveSearchTerm] = useState('');
+  const [archiveFilterType, setArchiveFilterType] = useState<'all' | DocumentType>('all');
   const [currentInvoiceId, setCurrentInvoiceId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  // Invoice Number Settings
+  // Number Settings
   const [showNumberSettings, setShowNumberSettings] = useState(false);
   const [numberSettings, setNumberSettings] = useState<InvoiceNumberSettings>(getDefaultSettings());
+  const [offerSettings, setOfferSettings] = useState<InvoiceNumberSettings>(getDefaultOfferSettings());
   const [duplicateWarning, setDuplicateWarning] = useState(false);
+
+  // Modal States
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showArticleModal, setShowArticleModal] = useState(false);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [selectCustomerMode, setSelectCustomerMode] = useState(false);
+  const [selectArticleMode, setSelectArticleMode] = useState(false);
 
   // PDF Generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // Pro/License System
+  const pro = usePro();
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState<'invoice-limit' | 'customer-limit' | 'article-limit' | 'zugferd' | 'offers' | 'general'>('general');
 
   // Form State
   const [rechnung, setRechnung] = useState<Rechnung>(() => createInitialRechnung(today, in14Days));
@@ -984,7 +714,7 @@ export default function Home() {
   const invoices = useLiveQuery(() => db.invoices.orderBy('updatedAt').reverse().toArray(), []) ?? [];
 
   // Toast helper
-  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
     const id = generateId();
     setToasts(prev => [...prev, { id, message, type }]);
   }, []);
@@ -997,9 +727,13 @@ export default function Home() {
   useEffect(() => {
     const init = async () => {
       await migrateFromLocalStorage();
-      const settings = await db.settings.get('invoice-number-settings');
-      if (settings) {
-        setNumberSettings(settings);
+      const invSettings = await db.settings.get('invoice-number-settings');
+      if (invSettings) {
+        setNumberSettings(invSettings as InvoiceNumberSettings);
+      }
+      const offSettings = await db.settings.get('offer-number-settings');
+      if (offSettings) {
+        setOfferSettings(offSettings as InvoiceNumberSettings);
       }
       setIsLoaded(true);
     };
@@ -1012,7 +746,7 @@ export default function Home() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const data: FormState = JSON.parse(saved);
+        const data = JSON.parse(saved);
         if (data.rechnung) setRechnung(data.rechnung);
         if (data.verkaeufer) setVerkaeufer(data.verkaeufer);
         if (data.kaeufer) setKaeufer(data.kaeufer);
@@ -1063,7 +797,7 @@ export default function Home() {
   // Computed values
   const summen = calculateSummen(positionen);
   const brutto = summen.netto + summen.ust19 + summen.ust7;
-  const errors = validateForm(rechnung, verkaeufer, kaeufer, positionen);
+  const errors = validateFormBasic(rechnung, verkaeufer, kaeufer, positionen);
   const isValid = errors.length === 0;
   const progress = calculateProgress(rechnung, verkaeufer, kaeufer, positionen);
 
@@ -1100,14 +834,18 @@ export default function Home() {
 
   // Auto-generate invoice number
   const autoGenerateNumber = useCallback(async () => {
-    const newNumber = await generateInvoiceNumber();
+    const newNumber = documentType === 'invoice'
+      ? await generateInvoiceNumber()
+      : await generateOfferNumber();
     setRechnung(prev => ({ ...prev, nummer: newNumber }));
-    showToast('Rechnungsnummer generiert', 'success');
-  }, [showToast]);
+    showToast(`${documentType === 'invoice' ? 'Rechnungsnummer' : 'Angebotsnummer'} generiert`, 'success');
+  }, [showToast, documentType]);
 
   // Reset form
   const resetForm = useCallback(async () => {
-    const nextNumber = await getNextInvoiceNumber();
+    const nextNumber = documentType === 'invoice'
+      ? await getNextInvoiceNumber()
+      : await getNextOfferNumber();
     setRechnung({ ...createInitialRechnung(today, in14Days), nummer: nextNumber });
     setVerkaeufer(createInitialVerkaeufer());
     setKaeufer(createInitialKaeufer());
@@ -1119,26 +857,32 @@ export default function Home() {
     setHasUnsavedChanges(false);
     localStorage.removeItem(STORAGE_KEY);
     setShowResetConfirm(false);
-    showToast('Neue Rechnung erstellt', 'info');
-  }, [today, in14Days, showToast]);
+    showToast(`Neue${documentType === 'invoice' ? 's Dokument' : 's Angebot'} erstellt`, 'info');
+  }, [today, in14Days, showToast, documentType]);
 
   // Save to archive
   const saveToArchive = useCallback(async (saveAsNew = false) => {
     const invoiceData: InvoiceData = { rechnung, verkaeufer, kaeufer, positionen };
 
     if (currentInvoiceId && !saveAsNew) {
-      // Update existing
       await db.invoices.update(currentInvoiceId, {
         invoiceNumber: rechnung.nummer || 'Entwurf',
         customerName: kaeufer.firma || 'Unbekannt',
         totalGross: brutto,
+        documentType,
         updatedAt: new Date(),
         data: invoiceData
       });
       setHasUnsavedChanges(false);
-      showToast('Rechnung aktualisiert', 'success');
+      showToast('Dokument aktualisiert', 'success');
     } else {
-      // Create new
+      // Check invoice limit for new invoices (only for invoices, not offers)
+      if (documentType === 'invoice' && !pro.canCreateInvoice) {
+        setUpgradeReason('invoice-limit');
+        pro.showUpgradeModal();
+        return;
+      }
+
       const newId = crypto.randomUUID();
       await db.invoices.add({
         id: newId,
@@ -1146,15 +890,22 @@ export default function Home() {
         customerName: kaeufer.firma || 'Unbekannt',
         totalGross: brutto,
         status: 'draft',
+        documentType,
         createdAt: new Date(),
         updatedAt: new Date(),
         data: invoiceData
       });
       setCurrentInvoiceId(newId);
       setHasUnsavedChanges(false);
-      showToast('Rechnung im Archiv gespeichert', 'success');
+
+      // Increment invoice count for free users
+      if (documentType === 'invoice') {
+        pro.incrementInvoiceCount();
+      }
+
+      showToast('Dokument im Archiv gespeichert', 'success');
     }
-  }, [rechnung, verkaeufer, kaeufer, positionen, brutto, currentInvoiceId, showToast]);
+  }, [rechnung, verkaeufer, kaeufer, positionen, brutto, currentInvoiceId, showToast, documentType, pro]);
 
   // Load from archive
   const loadFromArchive = useCallback((invoice: ArchivedInvoice) => {
@@ -1166,10 +917,11 @@ export default function Home() {
     setVerkaeufer(invoice.data.verkaeufer);
     setKaeufer(invoice.data.kaeufer);
     setPositionen(invoice.data.positionen);
+    setDocumentType(invoice.documentType || 'invoice');
     setCurrentInvoiceId(invoice.id);
     setHasUnsavedChanges(false);
     setShowArchive(false);
-    showToast(`Rechnung ${invoice.invoiceNumber} geladen`, 'success');
+    showToast(`${invoice.documentType === 'offer' ? 'Angebot' : 'Rechnung'} ${invoice.invoiceNumber} geladen`, 'success');
   }, [hasUnsavedChanges, showToast]);
 
   const confirmLoadFromArchive = useCallback(() => {
@@ -1178,25 +930,49 @@ export default function Home() {
       setVerkaeufer(showUnsavedWarning.data.verkaeufer);
       setKaeufer(showUnsavedWarning.data.kaeufer);
       setPositionen(showUnsavedWarning.data.positionen);
+      setDocumentType(showUnsavedWarning.documentType || 'invoice');
       setCurrentInvoiceId(showUnsavedWarning.id);
       setHasUnsavedChanges(false);
       setShowArchive(false);
       setShowUnsavedWarning(null);
-      showToast(`Rechnung ${showUnsavedWarning.invoiceNumber} geladen`, 'success');
+      showToast(`Dokument ${showUnsavedWarning.invoiceNumber} geladen`, 'success');
     }
   }, [showUnsavedWarning, showToast]);
 
   // Duplicate invoice
   const duplicateInvoice = useCallback(async (invoice: ArchivedInvoice) => {
-    const nextNumber = await generateInvoiceNumber();
+    const nextNumber = invoice.documentType === 'offer'
+      ? await generateOfferNumber()
+      : await generateInvoiceNumber();
     setRechnung({ ...invoice.data.rechnung, nummer: nextNumber, datum: today, faelligkeit: in14Days });
     setVerkaeufer(invoice.data.verkaeufer);
     setKaeufer(invoice.data.kaeufer);
     setPositionen(invoice.data.positionen.map(p => ({ ...p, id: generateId() })));
+    setDocumentType(invoice.documentType || 'invoice');
     setCurrentInvoiceId(null);
     setHasUnsavedChanges(true);
     setShowArchive(false);
-    showToast('Rechnung dupliziert', 'success');
+    showToast('Dokument dupliziert', 'success');
+  }, [today, in14Days, showToast]);
+
+  // Convert offer to invoice
+  const convertOfferToInvoice = useCallback(async (offer: ArchivedInvoice) => {
+    const nextNumber = await generateInvoiceNumber();
+    setRechnung({
+      ...offer.data.rechnung,
+      nummer: nextNumber,
+      datum: today,
+      faelligkeit: in14Days,
+      art: '380 - Rechnung'
+    });
+    setVerkaeufer(offer.data.verkaeufer);
+    setKaeufer(offer.data.kaeufer);
+    setPositionen(offer.data.positionen.map(p => ({ ...p, id: generateId() })));
+    setDocumentType('invoice');
+    setCurrentInvoiceId(null);
+    setHasUnsavedChanges(true);
+    setShowArchive(false);
+    showToast('Angebot in Rechnung umgewandelt', 'success');
   }, [today, in14Days, showToast]);
 
   // Delete from archive
@@ -1206,7 +982,7 @@ export default function Home() {
       setCurrentInvoiceId(null);
     }
     setShowDeleteConfirm(null);
-    showToast('Rechnung gelöscht', 'info');
+    showToast('Dokument gelöscht', 'info');
   }, [currentInvoiceId, showToast]);
 
   // Update invoice status
@@ -1218,9 +994,73 @@ export default function Home() {
   // Save number settings
   const saveNumberSettings = useCallback(async (settings: InvoiceNumberSettings) => {
     await db.settings.put(settings);
-    setNumberSettings(settings);
+    if (documentType === 'invoice') {
+      setNumberSettings(settings);
+    } else {
+      setOfferSettings(settings);
+    }
     showToast('Einstellungen gespeichert', 'success');
+  }, [showToast, documentType]);
+
+  // Customer selection handler
+  const handleCustomerSelect = useCallback((customer: Customer) => {
+    const kaeuferData = customerToKaeufer(customer);
+    setKaeufer(kaeuferData);
+    if (customer.leitwegId) {
+      setRechnung(prev => ({ ...prev, leitwegId: customer.leitwegId! }));
+    }
+    setSelectCustomerMode(false);
+    showToast(`Kunde "${customer.name}" übernommen`, 'success');
   }, [showToast]);
+
+  // Save current buyer as customer
+  const saveCurrentBuyerAsCustomer = useCallback(async () => {
+    if (!kaeufer.firma) {
+      showToast('Bitte zuerst Kundendaten eingeben', 'error');
+      return;
+    }
+    const customerData = kaeuferToCustomer(kaeufer, rechnung.leitwegId);
+    const customer: Customer = {
+      ...customerData,
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    await saveCustomer(customer);
+    showToast('Kunde gespeichert', 'success');
+  }, [kaeufer, rechnung.leitwegId, showToast]);
+
+  // Article selection handler
+  const handleArticleSelect = useCallback((article: Article) => {
+    const positionData = articleToPosition(article);
+    setPositionen(prev => [...prev, { ...positionData, id: generateId() }]);
+    setSelectArticleMode(false);
+    showToast(`Artikel "${article.name}" hinzugefügt`, 'success');
+  }, [showToast]);
+
+  // Save position as article
+  const savePositionAsArticle = useCallback(async (position: Position) => {
+    if (!position.bezeichnung) {
+      showToast('Position hat keine Bezeichnung', 'error');
+      return;
+    }
+    const articleData = positionToArticle(position);
+    const article: Article = {
+      ...articleData,
+      id: crypto.randomUUID(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    await saveArticle(article);
+    showToast('Artikel gespeichert', 'success');
+  }, [showToast]);
+
+  // Validation
+  const runValidation = useCallback(() => {
+    const result = validateXRechnung(rechnung, verkaeufer, kaeufer, positionen);
+    setValidationResult(result);
+    setShowValidationModal(true);
+  }, [rechnung, verkaeufer, kaeufer, positionen]);
 
   const fillExampleData = useCallback(() => {
     setRechnung({
@@ -1244,14 +1084,15 @@ export default function Home() {
       { id: '3', bezeichnung: 'Steckdosen & Schalter (Gira)', typ: 'M', menge: 12, einheit: 'Stk', preis: 18.50, ust: 19 },
       { id: '4', bezeichnung: 'Anfahrt München-Innenstadt', typ: 'F', menge: 1, einheit: 'psch', preis: 35, ust: 19 }
     ]);
+    setDocumentType('invoice');
     showToast('Demo-Daten geladen', 'success');
   }, [today, in14Days, showToast]);
 
   const copyXML = useCallback(async () => {
-    const xml = generateXRechnungXML(rechnung, verkaeufer, kaeufer, positionen);
+    const xml = generateXRechnungXML(rechnung, verkaeufer, kaeufer, positionen, documentType);
     await navigator.clipboard.writeText(xml);
     showToast('XRechnung in Zwischenablage kopiert', 'success');
-  }, [rechnung, verkaeufer, kaeufer, positionen, showToast]);
+  }, [rechnung, verkaeufer, kaeufer, positionen, documentType, showToast]);
 
   const downloadXML = useCallback(() => {
     setAttemptedExport(true);
@@ -1259,7 +1100,7 @@ export default function Home() {
       showToast('Bitte alle Pflichtfelder ausfüllen', 'error');
       return;
     }
-    const xml = generateXRechnungXML(rechnung, verkaeufer, kaeufer, positionen);
+    const xml = generateXRechnungXML(rechnung, verkaeufer, kaeufer, positionen, documentType);
     const blob = new Blob([xml], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1268,9 +1109,9 @@ export default function Home() {
     a.click();
     URL.revokeObjectURL(url);
     showToast('XRechnung wurde gespeichert', 'success');
-  }, [isValid, rechnung, verkaeufer, kaeufer, positionen, today, showToast]);
+  }, [isValid, rechnung, verkaeufer, kaeufer, positionen, today, showToast, documentType]);
 
-  // PDF Export
+  // PDF Export - Professional DIN 5008 layout using jsPDF directly
   const downloadPDF = useCallback(async () => {
     setAttemptedExport(true);
     if (!isValid) {
@@ -1279,39 +1120,329 @@ export default function Home() {
     }
 
     setIsGeneratingPdf(true);
-    setActiveTab('vorschau');
-
-    // Wait for tab switch and render
-    await new Promise(resolve => setTimeout(resolve, 200));
 
     try {
-      const html2canvas = (await import('html2canvas')).default;
       const jsPDF = (await import('jspdf')).default;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-      const element = previewRef.current;
-      if (!element) {
-        throw new Error('Preview element not found');
+      // A4: 210mm x 297mm, margins: 20mm
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const marginLeft = 20;
+      const marginRight = 20;
+      const marginTop = 20;
+      const contentWidth = pageWidth - marginLeft - marginRight;
+
+      // Helper functions
+      const formatCurrency = (val: number) => val.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const formatDate = (dateStr: string) => {
+        if (!dateStr) return '—';
+        const [y, m, d] = dateStr.split('-');
+        return `${d}.${m}.${y}`;
+      };
+
+      const isOffer = documentType === 'offer';
+      const docTitle = isOffer ? 'ANGEBOT' : 'RECHNUNG';
+      const numberLabel = isOffer ? 'Angebots-Nr.:' : 'Rechnungs-Nr.:';
+      const dateLabel2 = isOffer ? 'Gültig bis:' : 'Fällig bis:';
+      const endDate = rechnung.faelligkeit;
+
+      let y = marginTop;
+
+      // === ABSENDER-RÜCKSENDEZEILE (klein, grau) ===
+      doc.setFontSize(7);
+      doc.setTextColor(156, 163, 175); // gray-400
+      doc.setFont('helvetica', 'normal');
+      const senderLine = `${verkaeufer.firma || 'Firma'} · ${verkaeufer.strasse || 'Straße'} · ${verkaeufer.plz} ${verkaeufer.ort}`;
+      doc.text(senderLine, marginLeft, y);
+      y += 6;
+
+      // === ADRESSFELD + DOKUMENTTITEL ===
+      const addressStartY = y;
+
+      // Empfänger-Block (links, 85mm breit)
+      doc.setFontSize(11);
+      doc.setTextColor(17, 24, 39); // gray-900
+      doc.setFont('helvetica', 'bold');
+      doc.text(kaeufer.firma || '—', marginLeft, y);
+      y += 5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(55, 65, 81); // gray-700
+      if (kaeufer.ansprechpartner) {
+        doc.text(kaeufer.ansprechpartner, marginLeft, y);
+        y += 4.5;
+      }
+      doc.text(kaeufer.strasse || '—', marginLeft, y);
+      y += 4.5;
+      doc.text(`${kaeufer.plz} ${kaeufer.ort}`, marginLeft, y);
+
+      // Dokumenttitel rechts (RECHNUNG / ANGEBOT)
+      doc.setFontSize(22);
+      doc.setTextColor(17, 24, 39);
+      doc.setFont('helvetica', 'bold');
+      doc.text(docTitle, pageWidth - marginRight, addressStartY + 2, { align: 'right' });
+
+      // Rechnungsdaten rechts als Tabelle
+      let infoY = addressStartY + 12;
+      doc.setFontSize(9);
+
+      const drawInfoRow = (label: string, value: string, bold = false) => {
+        doc.setTextColor(107, 114, 128); // gray-500
+        doc.setFont('helvetica', 'normal');
+        doc.text(label, pageWidth - marginRight - 45, infoY);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', bold ? 'bold' : 'normal');
+        doc.text(value, pageWidth - marginRight, infoY, { align: 'right' });
+        infoY += 4.5;
+      };
+
+      drawInfoRow(numberLabel, rechnung.nummer || '—', true);
+      drawInfoRow('Datum:', formatDate(rechnung.datum));
+      if (rechnung.leistungszeitraum) {
+        drawInfoRow(isOffer ? 'Zeitraum:' : 'Leistungszeitraum:', rechnung.leistungszeitraum);
+      }
+      if (kaeufer.kundennummer) {
+        drawInfoRow('Kunden-Nr.:', kaeufer.kundennummer);
+      }
+      drawInfoRow(dateLabel2, formatDate(endDate), true);
+
+      y = Math.max(y, infoY) + 12;
+
+      // === BETREFFZEILE ===
+      doc.setFontSize(11);
+      doc.setTextColor(17, 24, 39);
+      doc.setFont('helvetica', 'bold');
+      const subject = isOffer
+        ? `Angebot für ${rechnung.leistungszeitraum ? `geplante Leistungen – ${rechnung.leistungszeitraum}` : 'angebotene Leistungen'}`
+        : `Rechnung für erbrachte Leistungen${rechnung.leistungszeitraum ? ` – ${rechnung.leistungszeitraum}` : ''}`;
+      doc.text(subject, marginLeft, y);
+      y += 10;
+
+      // === POSITIONEN-TABELLE ===
+      const colPos = marginLeft;
+      const colDesc = marginLeft + 12;
+      const colQty = marginLeft + 110;
+      const colPrice = marginLeft + 130;
+      const colTotal = pageWidth - marginRight;
+
+      // Table Header
+      doc.setFontSize(9);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Pos', colPos, y);
+      doc.text('Beschreibung', colDesc, y);
+      doc.text('Menge', colQty, y, { align: 'right' });
+      doc.text('E-Preis', colPrice, y, { align: 'right' });
+      doc.text('Betrag', colTotal, y, { align: 'right' });
+      y += 2;
+
+      // Header line
+      doc.setDrawColor(17, 24, 39);
+      doc.setLineWidth(0.5);
+      doc.line(marginLeft, y, pageWidth - marginRight, y);
+      y += 5;
+
+      // Table rows
+      doc.setFont('helvetica', 'normal');
+      const filteredPositions = positionen.filter(p => p.bezeichnung);
+      filteredPositions.forEach((pos, idx) => {
+        doc.setTextColor(107, 114, 128);
+        doc.text(String(idx + 1), colPos, y);
+
+        doc.setTextColor(17, 24, 39);
+        // Wrap long descriptions
+        const descLines = doc.splitTextToSize(pos.bezeichnung, 90);
+        doc.text(descLines, colDesc, y);
+
+        doc.setTextColor(55, 65, 81);
+        doc.text(`${pos.menge} ${pos.einheit}`, colQty, y, { align: 'right' });
+        doc.text(`${formatCurrency(pos.preis)} €`, colPrice, y, { align: 'right' });
+
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${formatCurrency(pos.menge * pos.preis)} €`, colTotal, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+
+        const rowHeight = Math.max(descLines.length * 4, 5);
+        y += rowHeight;
+
+        // Row separator line
+        doc.setDrawColor(229, 231, 235);
+        doc.setLineWidth(0.2);
+        doc.line(marginLeft, y - 1, pageWidth - marginRight, y - 1);
+        y += 3;
+      });
+
+      y += 5;
+
+      // === SUMMEN-BLOCK (rechtsbündig) ===
+      const sumStartX = pageWidth - marginRight - 60;
+      const sumValueX = pageWidth - marginRight;
+
+      doc.setFontSize(9);
+      const drawSumRow = (label: string, value: string, bold = false, topLine = false) => {
+        if (topLine) {
+          doc.setDrawColor(17, 24, 39);
+          doc.setLineWidth(0.5);
+          doc.line(sumStartX, y - 1, sumValueX, y - 1);
+          y += 2;
+        }
+        doc.setTextColor(75, 85, 99);
+        doc.setFont('helvetica', 'normal');
+        doc.text(label, sumStartX, y);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', bold ? 'bold' : 'normal');
+        doc.text(value, sumValueX, y, { align: 'right' });
+        y += 5;
+      };
+
+      drawSumRow('Nettobetrag:', `${formatCurrency(summen.netto)} €`);
+      if (summen.ust19 > 0) {
+        drawSumRow('+ USt 19%:', `${formatCurrency(summen.ust19)} €`);
+      }
+      if (summen.ust7 > 0) {
+        drawSumRow('+ USt 7%:', `${formatCurrency(summen.ust7)} €`);
       }
 
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
+      // Gesamtbetrag with top line
+      doc.setFontSize(11);
+      drawSumRow('Gesamtbetrag:', `${formatCurrency(brutto)} €`, true, true);
+      doc.setFontSize(9);
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
+      y += 5;
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
+      // === §35a EStG BOX (nur bei Rechnung) ===
+      if (!isOffer && (summen.lohn > 0 || summen.material > 0)) {
+        doc.setDrawColor(209, 213, 219);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(marginLeft, y, contentWidth, 14, 2, 2, 'S');
 
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Rechnung-${rechnung.nummer || 'Entwurf'}-${today}.pdf`);
+        y += 4;
+        doc.setFontSize(8);
+        doc.setTextColor(55, 65, 81);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Ausweisung gemäß §35a EStG (Handwerkerleistungen):', marginLeft + 3, y);
+        y += 4;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Lohnkosten: `, marginLeft + 3, y);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${formatCurrency(summen.lohn)} €`, marginLeft + 25, y);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Materialkosten: `, marginLeft + 55, y);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${formatCurrency(summen.material)} €`, marginLeft + 82, y);
+
+        y += 10;
+      }
+
+      y += 5;
+
+      // === SCHLUSSTEXT ===
+      doc.setFontSize(9);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'normal');
+      if (isOffer) {
+        doc.text(`Dieses Angebot ist gültig bis zum ${formatDate(endDate)}.`, marginLeft, y);
+        y += 4;
+        doc.text('Bei Fragen stehen wir Ihnen gerne zur Verfügung. Wir freuen uns auf Ihre Beauftragung!', marginLeft, y);
+      } else {
+        doc.text(`Bitte überweisen Sie den Rechnungsbetrag bis zum ${formatDate(rechnung.faelligkeit)} auf das unten angegebene Konto.`, marginLeft, y);
+        y += 4;
+        doc.text('Vielen Dank für Ihren Auftrag!', marginLeft, y);
+      }
+
+      // === FUSSZEILE (3-spaltig, am unteren Rand) ===
+      const footerY = pageHeight - 25;
+      const colWidth = contentWidth / 3;
+
+      // Trennlinie
+      doc.setDrawColor(209, 213, 219);
+      doc.setLineWidth(0.3);
+      doc.line(marginLeft, footerY - 5, pageWidth - marginRight, footerY - 5);
+
+      doc.setFontSize(7);
+
+      // Spalte 1: Kontakt
+      let footerCol1Y = footerY;
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text(verkaeufer.firma || '', marginLeft, footerCol1Y);
+      footerCol1Y += 3;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(107, 114, 128);
+      doc.text(verkaeufer.strasse || '', marginLeft, footerCol1Y);
+      footerCol1Y += 3;
+      doc.text(`${verkaeufer.plz} ${verkaeufer.ort}`, marginLeft, footerCol1Y);
+      footerCol1Y += 3;
+      if (verkaeufer.telefon) {
+        doc.text(`Tel: ${verkaeufer.telefon}`, marginLeft, footerCol1Y);
+        footerCol1Y += 3;
+      }
+      if (verkaeufer.email) {
+        doc.text(verkaeufer.email, marginLeft, footerCol1Y);
+      }
+
+      // Spalte 2: Bankverbindung
+      let footerCol2Y = footerY;
+      const col2X = marginLeft + colWidth;
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Bankverbindung', col2X, footerCol2Y);
+      footerCol2Y += 3;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(107, 114, 128);
+      if (verkaeufer.iban) {
+        doc.text(`IBAN: ${verkaeufer.iban}`, col2X, footerCol2Y);
+        footerCol2Y += 3;
+      }
+      if (verkaeufer.bic) {
+        doc.text(`BIC: ${verkaeufer.bic}`, col2X, footerCol2Y);
+        footerCol2Y += 3;
+      }
+      if (verkaeufer.bank) {
+        doc.text(verkaeufer.bank, col2X, footerCol2Y);
+      }
+
+      // Spalte 3: Steuerdaten
+      let footerCol3Y = footerY;
+      const col3X = marginLeft + colWidth * 2;
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Steuerdaten', col3X, footerCol3Y);
+      footerCol3Y += 3;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(107, 114, 128);
+      if (verkaeufer.ustId) {
+        doc.text(`USt-IdNr.: ${verkaeufer.ustId}`, col3X, footerCol3Y);
+        footerCol3Y += 3;
+      }
+      if (verkaeufer.steuernummer) {
+        doc.text(`St.-Nr.: ${verkaeufer.steuernummer}`, col3X, footerCol3Y);
+        footerCol3Y += 3;
+      }
+      if (verkaeufer.handelsregister) {
+        doc.text(verkaeufer.handelsregister, col3X, footerCol3Y);
+      }
+
+      // Watermark for free users
+      if (!pro.isPro) {
+        doc.setFontSize(8);
+        doc.setTextColor(180, 180, 180);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Erstellt mit e-rechnung-app.de', pageWidth - marginRight, pageHeight - 8, { align: 'right' });
+      }
+
+      // Save PDF
+      const filename = `${isOffer ? 'Angebot' : 'Rechnung'}-${rechnung.nummer || 'Entwurf'}-${today}.pdf`;
+      doc.save(filename);
 
       showToast('PDF wurde erstellt', 'success');
     } catch (error) {
@@ -1320,12 +1451,396 @@ export default function Home() {
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [isValid, rechnung.nummer, today, showToast]);
+  }, [isValid, rechnung, verkaeufer, kaeufer, positionen, summen, brutto, documentType, today, showToast, pro.isPro]);
+
+  // ZUGFeRD Export - Professional DIN 5008 layout with embedded XML
+  const downloadZUGFeRD = useCallback(async () => {
+    setAttemptedExport(true);
+    if (!isValid) {
+      showToast('Bitte alle Pflichtfelder ausfüllen', 'error');
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+
+    try {
+      const jsPDF = (await import('jspdf')).default;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      // A4: 210mm x 297mm, margins: 20mm
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const marginLeft = 20;
+      const marginRight = 20;
+      const marginTop = 20;
+      const contentWidth = pageWidth - marginLeft - marginRight;
+
+      // Helper functions
+      const formatCurrency = (val: number) => val.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const formatDate = (dateStr: string) => {
+        if (!dateStr) return '—';
+        const [y, m, d] = dateStr.split('-');
+        return `${d}.${m}.${y}`;
+      };
+
+      const isOffer = documentType === 'offer';
+      const docTitle = isOffer ? 'ANGEBOT' : 'RECHNUNG';
+      const numberLabel = isOffer ? 'Angebots-Nr.:' : 'Rechnungs-Nr.:';
+      const dateLabel2 = isOffer ? 'Gültig bis:' : 'Fällig bis:';
+      const endDate = rechnung.faelligkeit;
+
+      let y = marginTop;
+
+      // === ABSENDER-RÜCKSENDEZEILE ===
+      doc.setFontSize(7);
+      doc.setTextColor(156, 163, 175);
+      doc.setFont('helvetica', 'normal');
+      const senderLine = `${verkaeufer.firma || 'Firma'} · ${verkaeufer.strasse || 'Straße'} · ${verkaeufer.plz} ${verkaeufer.ort}`;
+      doc.text(senderLine, marginLeft, y);
+      y += 6;
+
+      // === ADRESSFELD + DOKUMENTTITEL ===
+      const addressStartY = y;
+
+      doc.setFontSize(11);
+      doc.setTextColor(17, 24, 39);
+      doc.setFont('helvetica', 'bold');
+      doc.text(kaeufer.firma || '—', marginLeft, y);
+      y += 5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(55, 65, 81);
+      if (kaeufer.ansprechpartner) {
+        doc.text(kaeufer.ansprechpartner, marginLeft, y);
+        y += 4.5;
+      }
+      doc.text(kaeufer.strasse || '—', marginLeft, y);
+      y += 4.5;
+      doc.text(`${kaeufer.plz} ${kaeufer.ort}`, marginLeft, y);
+
+      doc.setFontSize(22);
+      doc.setTextColor(17, 24, 39);
+      doc.setFont('helvetica', 'bold');
+      doc.text(docTitle, pageWidth - marginRight, addressStartY + 2, { align: 'right' });
+
+      let infoY = addressStartY + 12;
+      doc.setFontSize(9);
+
+      const drawInfoRow = (label: string, value: string, bold = false) => {
+        doc.setTextColor(107, 114, 128);
+        doc.setFont('helvetica', 'normal');
+        doc.text(label, pageWidth - marginRight - 45, infoY);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', bold ? 'bold' : 'normal');
+        doc.text(value, pageWidth - marginRight, infoY, { align: 'right' });
+        infoY += 4.5;
+      };
+
+      drawInfoRow(numberLabel, rechnung.nummer || '—', true);
+      drawInfoRow('Datum:', formatDate(rechnung.datum));
+      if (rechnung.leistungszeitraum) {
+        drawInfoRow(isOffer ? 'Zeitraum:' : 'Leistungszeitraum:', rechnung.leistungszeitraum);
+      }
+      if (kaeufer.kundennummer) {
+        drawInfoRow('Kunden-Nr.:', kaeufer.kundennummer);
+      }
+      drawInfoRow(dateLabel2, formatDate(endDate), true);
+
+      y = Math.max(y, infoY) + 12;
+
+      // === BETREFFZEILE ===
+      doc.setFontSize(11);
+      doc.setTextColor(17, 24, 39);
+      doc.setFont('helvetica', 'bold');
+      const subject = isOffer
+        ? `Angebot für ${rechnung.leistungszeitraum ? `geplante Leistungen – ${rechnung.leistungszeitraum}` : 'angebotene Leistungen'}`
+        : `Rechnung für erbrachte Leistungen${rechnung.leistungszeitraum ? ` – ${rechnung.leistungszeitraum}` : ''}`;
+      doc.text(subject, marginLeft, y);
+      y += 10;
+
+      // === POSITIONEN-TABELLE ===
+      const colPos = marginLeft;
+      const colDesc = marginLeft + 12;
+      const colQty = marginLeft + 110;
+      const colPrice = marginLeft + 130;
+      const colTotal = pageWidth - marginRight;
+
+      doc.setFontSize(9);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Pos', colPos, y);
+      doc.text('Beschreibung', colDesc, y);
+      doc.text('Menge', colQty, y, { align: 'right' });
+      doc.text('E-Preis', colPrice, y, { align: 'right' });
+      doc.text('Betrag', colTotal, y, { align: 'right' });
+      y += 2;
+
+      doc.setDrawColor(17, 24, 39);
+      doc.setLineWidth(0.5);
+      doc.line(marginLeft, y, pageWidth - marginRight, y);
+      y += 5;
+
+      doc.setFont('helvetica', 'normal');
+      const filteredPositions = positionen.filter(p => p.bezeichnung);
+      filteredPositions.forEach((pos, idx) => {
+        doc.setTextColor(107, 114, 128);
+        doc.text(String(idx + 1), colPos, y);
+
+        doc.setTextColor(17, 24, 39);
+        const descLines = doc.splitTextToSize(pos.bezeichnung, 90);
+        doc.text(descLines, colDesc, y);
+
+        doc.setTextColor(55, 65, 81);
+        doc.text(`${pos.menge} ${pos.einheit}`, colQty, y, { align: 'right' });
+        doc.text(`${formatCurrency(pos.preis)} €`, colPrice, y, { align: 'right' });
+
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${formatCurrency(pos.menge * pos.preis)} €`, colTotal, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+
+        const rowHeight = Math.max(descLines.length * 4, 5);
+        y += rowHeight;
+
+        doc.setDrawColor(229, 231, 235);
+        doc.setLineWidth(0.2);
+        doc.line(marginLeft, y - 1, pageWidth - marginRight, y - 1);
+        y += 3;
+      });
+
+      y += 5;
+
+      // === SUMMEN-BLOCK ===
+      const sumStartX = pageWidth - marginRight - 60;
+      const sumValueX = pageWidth - marginRight;
+
+      doc.setFontSize(9);
+      const drawSumRow = (label: string, value: string, bold = false, topLine = false) => {
+        if (topLine) {
+          doc.setDrawColor(17, 24, 39);
+          doc.setLineWidth(0.5);
+          doc.line(sumStartX, y - 1, sumValueX, y - 1);
+          y += 2;
+        }
+        doc.setTextColor(75, 85, 99);
+        doc.setFont('helvetica', 'normal');
+        doc.text(label, sumStartX, y);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', bold ? 'bold' : 'normal');
+        doc.text(value, sumValueX, y, { align: 'right' });
+        y += 5;
+      };
+
+      drawSumRow('Nettobetrag:', `${formatCurrency(summen.netto)} €`);
+      if (summen.ust19 > 0) {
+        drawSumRow('+ USt 19%:', `${formatCurrency(summen.ust19)} €`);
+      }
+      if (summen.ust7 > 0) {
+        drawSumRow('+ USt 7%:', `${formatCurrency(summen.ust7)} €`);
+      }
+
+      doc.setFontSize(11);
+      drawSumRow('Gesamtbetrag:', `${formatCurrency(brutto)} €`, true, true);
+      doc.setFontSize(9);
+
+      y += 5;
+
+      // === §35a EStG BOX ===
+      if (!isOffer && (summen.lohn > 0 || summen.material > 0)) {
+        doc.setDrawColor(209, 213, 219);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(marginLeft, y, contentWidth, 14, 2, 2, 'S');
+
+        y += 4;
+        doc.setFontSize(8);
+        doc.setTextColor(55, 65, 81);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Ausweisung gemäß §35a EStG (Handwerkerleistungen):', marginLeft + 3, y);
+        y += 4;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Lohnkosten: `, marginLeft + 3, y);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${formatCurrency(summen.lohn)} €`, marginLeft + 25, y);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Materialkosten: `, marginLeft + 55, y);
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${formatCurrency(summen.material)} €`, marginLeft + 82, y);
+
+        y += 10;
+      }
+
+      y += 5;
+
+      // === SCHLUSSTEXT ===
+      doc.setFontSize(9);
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'normal');
+      if (isOffer) {
+        doc.text(`Dieses Angebot ist gültig bis zum ${formatDate(endDate)}.`, marginLeft, y);
+        y += 4;
+        doc.text('Bei Fragen stehen wir Ihnen gerne zur Verfügung. Wir freuen uns auf Ihre Beauftragung!', marginLeft, y);
+      } else {
+        doc.text(`Bitte überweisen Sie den Rechnungsbetrag bis zum ${formatDate(rechnung.faelligkeit)} auf das unten angegebene Konto.`, marginLeft, y);
+        y += 4;
+        doc.text('Vielen Dank für Ihren Auftrag!', marginLeft, y);
+      }
+
+      // === FUSSZEILE ===
+      const footerY = pageHeight - 25;
+      const colWidth = contentWidth / 3;
+
+      doc.setDrawColor(209, 213, 219);
+      doc.setLineWidth(0.3);
+      doc.line(marginLeft, footerY - 5, pageWidth - marginRight, footerY - 5);
+
+      doc.setFontSize(7);
+
+      let footerCol1Y = footerY;
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text(verkaeufer.firma || '', marginLeft, footerCol1Y);
+      footerCol1Y += 3;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(107, 114, 128);
+      doc.text(verkaeufer.strasse || '', marginLeft, footerCol1Y);
+      footerCol1Y += 3;
+      doc.text(`${verkaeufer.plz} ${verkaeufer.ort}`, marginLeft, footerCol1Y);
+      footerCol1Y += 3;
+      if (verkaeufer.telefon) {
+        doc.text(`Tel: ${verkaeufer.telefon}`, marginLeft, footerCol1Y);
+        footerCol1Y += 3;
+      }
+      if (verkaeufer.email) {
+        doc.text(verkaeufer.email, marginLeft, footerCol1Y);
+      }
+
+      let footerCol2Y = footerY;
+      const col2X = marginLeft + colWidth;
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Bankverbindung', col2X, footerCol2Y);
+      footerCol2Y += 3;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(107, 114, 128);
+      if (verkaeufer.iban) {
+        doc.text(`IBAN: ${verkaeufer.iban}`, col2X, footerCol2Y);
+        footerCol2Y += 3;
+      }
+      if (verkaeufer.bic) {
+        doc.text(`BIC: ${verkaeufer.bic}`, col2X, footerCol2Y);
+        footerCol2Y += 3;
+      }
+      if (verkaeufer.bank) {
+        doc.text(verkaeufer.bank, col2X, footerCol2Y);
+      }
+
+      let footerCol3Y = footerY;
+      const col3X = marginLeft + colWidth * 2;
+      doc.setTextColor(55, 65, 81);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Steuerdaten', col3X, footerCol3Y);
+      footerCol3Y += 3;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(107, 114, 128);
+      if (verkaeufer.ustId) {
+        doc.text(`USt-IdNr.: ${verkaeufer.ustId}`, col3X, footerCol3Y);
+        footerCol3Y += 3;
+      }
+      if (verkaeufer.steuernummer) {
+        doc.text(`St.-Nr.: ${verkaeufer.steuernummer}`, col3X, footerCol3Y);
+        footerCol3Y += 3;
+      }
+      if (verkaeufer.handelsregister) {
+        doc.text(verkaeufer.handelsregister, col3X, footerCol3Y);
+      }
+
+      // Get PDF as ArrayBuffer for ZUGFeRD embedding
+      const pdfBytes = doc.output('arraybuffer');
+
+      // Embed ZUGFeRD XML
+      const zugferdPdfBytes = await createZUGFeRDPDF(
+        new Uint8Array(pdfBytes),
+        rechnung,
+        verkaeufer,
+        kaeufer,
+        positionen
+      );
+
+      // Download
+      const blob = new Blob([zugferdPdfBytes as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ZUGFeRD-${rechnung.nummer || 'Entwurf'}-${today}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      showToast('ZUGFeRD-PDF wurde erstellt', 'success');
+    } catch (error) {
+      console.error('ZUGFeRD generation failed:', error);
+      showToast('ZUGFeRD-Erstellung fehlgeschlagen', 'error');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  }, [isValid, rechnung, verkaeufer, kaeufer, positionen, summen, brutto, documentType, today, showToast]);
+
+  // Export handler
+  const handleExport = useCallback((format: 'xrechnung' | 'zugferd' | 'pdf') => {
+    // Gate ZUGFeRD for Pro users
+    if (format === 'zugferd' && !pro.canUseZUGFeRD) {
+      setUpgradeReason('zugferd');
+      pro.showUpgradeModal();
+      return;
+    }
+
+    switch (format) {
+      case 'xrechnung':
+        downloadXML();
+        break;
+      case 'zugferd':
+        downloadZUGFeRD();
+        break;
+      case 'pdf':
+        downloadPDF();
+        break;
+    }
+  }, [downloadXML, downloadZUGFeRD, downloadPDF, pro]);
 
   const handlePrint = useCallback(() => {
     setActiveTab('vorschau');
     setTimeout(() => window.print(), 100);
   }, []);
+
+  // Switch document type
+  const switchDocumentType = useCallback(async (type: DocumentType) => {
+    // Gate offers for Pro users
+    if (type === 'offer' && !pro.canUseOffers) {
+      setUpgradeReason('offers');
+      pro.showUpgradeModal();
+      return;
+    }
+
+    setDocumentType(type);
+    if (!rechnung.nummer) {
+      const nextNumber = type === 'invoice'
+        ? await getNextInvoiceNumber()
+        : await getNextOfferNumber();
+      setRechnung(prev => ({
+        ...prev,
+        nummer: nextNumber,
+        art: type === 'invoice' ? '380 - Rechnung' : '310 - Angebot'
+      }));
+    }
+  }, [rechnung.nummer, pro]);
+
+  const currentSettings = documentType === 'invoice' ? numberSettings : offerSettings;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 print:bg-white print:min-h-0">
@@ -1342,7 +1857,7 @@ export default function Home() {
       <AnimatePresence>
         {showResetConfirm && (
           <ConfirmDialog
-            title="Neue Rechnung?"
+            title="Neues Dokument?"
             message="Alle eingegebenen Daten werden unwiderruflich gelöscht."
             onConfirm={resetForm}
             onCancel={() => setShowResetConfirm(false)}
@@ -1350,8 +1865,8 @@ export default function Home() {
         )}
         {showDeleteConfirm && (
           <ConfirmDialog
-            title="Rechnung löschen?"
-            message="Diese Rechnung wird unwiderruflich aus dem Archiv gelöscht."
+            title="Dokument löschen?"
+            message="Dieses Dokument wird unwiderruflich aus dem Archiv gelöscht."
             confirmText="Ja, löschen"
             onConfirm={() => deleteFromArchive(showDeleteConfirm)}
             onCancel={() => setShowDeleteConfirm(null)}
@@ -1379,24 +1894,87 @@ export default function Home() {
             onDuplicate={duplicateInvoice}
             onDelete={(id) => setShowDeleteConfirm(id)}
             onStatusChange={updateInvoiceStatus}
+            onConvertToInvoice={convertOfferToInvoice}
             invoices={invoices}
             searchTerm={archiveSearchTerm}
             setSearchTerm={setArchiveSearchTerm}
+            filterType={archiveFilterType}
+            setFilterType={setArchiveFilterType}
           />
         )}
       </AnimatePresence>
 
-      {/* Invoice Number Settings Modal */}
+      {/* Number Settings Modal */}
       <AnimatePresence>
         {showNumberSettings && (
-          <InvoiceNumberSettings
+          <NumberSettingsModal
             isOpen={showNumberSettings}
             onClose={() => setShowNumberSettings(false)}
-            settings={numberSettings}
+            settings={currentSettings}
             onSave={saveNumberSettings}
+            documentType={documentType}
           />
         )}
       </AnimatePresence>
+
+      {/* Customer Modal */}
+      <AnimatePresence>
+        {showCustomerModal && (
+          <CustomerModal
+            isOpen={showCustomerModal}
+            onClose={() => { setShowCustomerModal(false); setSelectCustomerMode(false); }}
+            onSelect={selectCustomerMode ? handleCustomerSelect : undefined}
+            showToast={showToast}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Article Modal */}
+      <AnimatePresence>
+        {showArticleModal && (
+          <ArticleModal
+            isOpen={showArticleModal}
+            onClose={() => { setShowArticleModal(false); setSelectArticleMode(false); }}
+            onSelect={selectArticleMode ? handleArticleSelect : undefined}
+            showToast={showToast}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Validation Modal */}
+      <AnimatePresence>
+        {showValidationModal && validationResult && (
+          <ValidationModal
+            isOpen={showValidationModal}
+            onClose={() => setShowValidationModal(false)}
+            result={validationResult}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Upgrade Modal */}
+      <UpgradeModal
+        isOpen={pro.isUpgradeModalOpen}
+        onClose={pro.hideUpgradeModal}
+        onActivateLicense={pro.activateLicense}
+        remainingInvoices={pro.remainingInvoices === Infinity ? 999 : pro.remainingInvoices}
+        invoicesThisMonth={pro.invoicesThisMonth}
+        triggerReason={upgradeReason}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        isPro={pro.isPro}
+        licenseKey={pro.licenseKey}
+        activatedAt={pro.activatedAt}
+        expiresAt={pro.expiresAt}
+        invoicesThisMonth={pro.invoicesThisMonth}
+        maxInvoicesPerMonth={pro.maxInvoicesPerMonth}
+        onActivateLicense={pro.activateLicense}
+        onDeactivateLicense={pro.deactivateLicense}
+      />
 
       {/* Header */}
       <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-slate-200 print:hidden">
@@ -1407,18 +1985,43 @@ export default function Home() {
                 className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20">
                 <FileText className="w-5 h-5 text-white" />
               </motion.div>
-              <div>
-                <h1 className="text-lg font-semibold text-slate-900 tracking-tight">E-Rechnung</h1>
-                <p className="text-xs text-slate-500 -mt-0.5">Handwerk Edition</p>
+              <div className="flex items-center gap-2">
+                <div>
+                  <h1 className="text-lg font-semibold text-slate-900 tracking-tight">E-Rechnung</h1>
+                  <p className="text-xs text-slate-500 -mt-0.5">Handwerk Edition</p>
+                </div>
+                {pro.isPro && (
+                  <span className="px-2 py-0.5 text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-full shadow-sm">
+                    Pro
+                  </span>
+                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Customers Button */}
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => setShowCustomerModal(true)}
+                className="hidden md:flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl text-slate-600 hover:bg-slate-100 transition-all"
+                title="Kundenstammdaten">
+                <Users className="w-4 h-4" />
+                <span className="text-sm font-medium">Kunden</span>
+              </motion.button>
+
+              {/* Articles Button */}
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => setShowArticleModal(true)}
+                className="hidden md:flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl text-slate-600 hover:bg-slate-100 transition-all"
+                title="Artikelstammdaten">
+                <Package className="w-4 h-4" />
+                <span className="text-sm font-medium">Artikel</span>
+              </motion.button>
+
               {/* Archive Button */}
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setShowArchive(true)}
                 className="relative flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl text-slate-600 hover:bg-slate-100 transition-all"
-                title="Rechnungsarchiv">
+                title="Archiv">
                 <Archive className="w-4 h-4" />
                 <span className="hidden sm:inline text-sm font-medium">Archiv</span>
                 {invoices.length > 0 && (
@@ -1432,7 +2035,7 @@ export default function Home() {
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setShowResetConfirm(true)}
                 className="flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl text-slate-600 hover:bg-slate-100 transition-all"
-                title="Neue Rechnung erstellen">
+                title="Neues Dokument">
                 <FilePlus className="w-4 h-4" />
                 <span className="hidden sm:inline text-sm font-medium">Neu</span>
               </motion.button>
@@ -1448,6 +2051,14 @@ export default function Home() {
                 className="hidden sm:flex items-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all">
                 <Sparkles className="w-4 h-4" />
                 Demo
+              </motion.button>
+
+              {/* Settings */}
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => setShowSettingsModal(true)}
+                className="p-2.5 min-h-[44px] min-w-[44px] rounded-xl text-slate-500 hover:bg-slate-100 transition-all flex items-center justify-center"
+                title="Einstellungen">
+                <Settings className="w-4 h-4" />
               </motion.button>
 
               {/* Save to Archive Button */}
@@ -1478,41 +2089,85 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-36 print:p-0 print:max-w-none print:pb-0 print:mx-0">
-        {/* Status Card */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className={`mb-6 p-4 rounded-2xl flex items-center gap-4 border transition-all print:hidden ${
-            isValid ? 'bg-emerald-50/80 border-emerald-200' : 'bg-white border-slate-200'
-          }`}>
-          {isValid ? (
-            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-              className="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/20">
-              <CheckCircle2 className="w-5 h-5 text-white" />
-            </motion.div>
-          ) : (
-            <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-              <Zap className="w-5 h-5 text-slate-400" />
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className={`font-semibold ${isValid ? 'text-emerald-900' : 'text-slate-700'}`}>
-              {isValid ? 'Bereit zum Export!' : `${progress}% ausgefüllt`}
-            </p>
-            <p className={`text-sm ${isValid ? 'text-emerald-700' : 'text-slate-500'}`}>
-              {isValid ? 'XRechnung & PDF können erstellt werden' :
-                attemptedExport && errors.length > 0 ? `Fehlend: ${errors.slice(0, 3).join(', ')}` : 'Füllen Sie die Pflichtfelder aus'}
-            </p>
+        {/* Document Type Toggle & Status Card */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-6 print:hidden">
+          {/* Document Type Toggle */}
+          <div className="flex gap-1 bg-slate-200/50 p-1 rounded-xl w-fit">
+            <button
+              onClick={() => switchDocumentType('invoice')}
+              className={`relative px-4 py-2 min-h-[40px] rounded-lg font-medium text-sm transition-all ${
+                documentType === 'invoice' ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {documentType === 'invoice' && (
+                <motion.div layoutId="docType" className="absolute inset-0 bg-white shadow-sm rounded-lg"
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
+              )}
+              <span className="relative z-10 flex items-center gap-1.5">
+                <Receipt className="w-4 h-4" />
+                Rechnung
+              </span>
+            </button>
+            <button
+              onClick={() => switchDocumentType('offer')}
+              className={`relative px-4 py-2 min-h-[40px] rounded-lg font-medium text-sm transition-all ${
+                documentType === 'offer' ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {documentType === 'offer' && (
+                <motion.div layoutId="docType" className="absolute inset-0 bg-white shadow-sm rounded-lg"
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }} />
+              )}
+              <span className="relative z-10 flex items-center gap-1.5">
+                <FileText className="w-4 h-4" />
+                Angebot
+              </span>
+            </button>
           </div>
-          {isValid && (
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={copyXML}
-              className="hidden sm:flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-all">
-              <Copy className="w-4 h-4" />
-              Kopieren
-            </motion.button>
-          )}
-          <button onClick={fillExampleData} className="sm:hidden p-2.5 min-h-[44px] min-w-[44px] rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center">
-            <Sparkles className="w-5 h-5" />
-          </button>
-        </motion.div>
+
+          {/* Status Card */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            className={`flex-1 p-4 rounded-2xl flex items-center gap-4 border transition-all ${
+              isValid ? 'bg-emerald-50/80 border-emerald-200' : 'bg-white border-slate-200'
+            }`}>
+            {isValid ? (
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                className="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/20">
+                <CheckCircle2 className="w-5 h-5 text-white" />
+              </motion.div>
+            ) : (
+              <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
+                <Zap className="w-5 h-5 text-slate-400" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className={`font-semibold ${isValid ? 'text-emerald-900' : 'text-slate-700'}`}>
+                {isValid ? 'Bereit zum Export!' : `${progress}% ausgefüllt`}
+              </p>
+              <p className={`text-sm ${isValid ? 'text-emerald-700' : 'text-slate-500'}`}>
+                {isValid ? 'XRechnung, ZUGFeRD & PDF können erstellt werden' :
+                  attemptedExport && errors.length > 0 ? `Fehlend: ${errors.slice(0, 3).join(', ')}` : 'Füllen Sie die Pflichtfelder aus'}
+              </p>
+            </div>
+            {isValid && (
+              <>
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={runValidation}
+                  className="hidden sm:flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-medium text-blue-700 hover:bg-blue-100 transition-all">
+                  <FileCheck className="w-4 h-4" />
+                  Prüfen
+                </motion.button>
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={copyXML}
+                  className="hidden sm:flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-all">
+                  <Copy className="w-4 h-4" />
+                  Kopieren
+                </motion.button>
+              </>
+            )}
+            <button onClick={fillExampleData} className="sm:hidden p-2.5 min-h-[44px] min-w-[44px] rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 flex items-center justify-center">
+              <Sparkles className="w-5 h-5" />
+            </button>
+          </motion.div>
+        </div>
 
         {/* Tab Toggle */}
         <div className="flex gap-1 mb-6 bg-slate-200/50 p-1 rounded-xl w-fit print:hidden">
@@ -1537,21 +2192,23 @@ export default function Home() {
               <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden transition-shadow duration-300 hover:shadow-md">
                 <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><Receipt className="w-4 h-4 text-slate-600" /></div>
-                  <h2 className="text-base font-semibold text-slate-900">Rechnungsdaten</h2>
+                  <h2 className="text-base font-semibold text-slate-900">
+                    {documentType === 'invoice' ? 'Rechnungsdaten' : 'Angebotsdaten'}
+                  </h2>
                   {currentInvoiceId && (
-                    <span className="ml-auto text-xs text-slate-400">Archiv-ID: {currentInvoiceId.slice(0, 8)}...</span>
+                    <span className="ml-auto text-xs text-slate-400">ID: {currentInvoiceId.slice(0, 8)}...</span>
                   )}
                 </div>
                 <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <FormInput
-                      label="Rechnungsnummer"
+                      label={documentType === 'invoice' ? 'Rechnungsnummer' : 'Angebotsnummer'}
                       value={rechnung.nummer}
                       onChange={handleRechnungChange('nummer')}
                       onBlur={() => markTouched('rechnung.nummer')}
                       required
                       showError={shouldShowError('rechnung.nummer')}
-                      placeholder="RE-2026-0001"
+                      placeholder={documentType === 'invoice' ? 'RE-2026-0001' : 'ANG-2026-0001'}
                       suffix={
                         <div className="flex">
                           <button
@@ -1578,11 +2235,11 @@ export default function Home() {
                       </p>
                     )}
                   </div>
-                  <FormInput label="Rechnungsdatum" type="date" value={rechnung.datum} onChange={handleRechnungChange('datum')}
+                  <FormInput label="Datum" type="date" value={rechnung.datum} onChange={handleRechnungChange('datum')}
                     onBlur={() => markTouched('rechnung.datum')} required showError={shouldShowError('rechnung.datum')} />
                   <div>
                     <label className="block text-sm font-medium text-slate-600 mb-1.5">
-                      Fälligkeitsdatum {!faelligkeitManuallySet && <span className="text-xs text-blue-500">(+14 Tage)</span>}
+                      {documentType === 'invoice' ? 'Fälligkeitsdatum' : 'Gültig bis'} {!faelligkeitManuallySet && <span className="text-xs text-blue-500">(+14 Tage)</span>}
                     </label>
                     <input type="date" value={rechnung.faelligkeit}
                       onChange={e => { setFaelligkeitManuallySet(true); setRechnung(prev => ({ ...prev, faelligkeit: e.target.value })); }}
@@ -1631,9 +2288,28 @@ export default function Home() {
 
                 {/* Käufer */}
                 <section className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden transition-shadow duration-300 hover:shadow-md">
-                  <div className="px-5 py-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center shadow-sm"><User className="w-4 h-4 text-white" /></div>
-                    <h2 className="text-base font-semibold text-slate-900">Kunde</h2>
+                  <div className="px-5 py-3 border-b border-emerald-100 bg-gradient-to-r from-emerald-50/80 to-teal-50/80 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center shadow-sm"><User className="w-4 h-4 text-white" /></div>
+                      <h2 className="text-base font-semibold text-slate-900">Kunde</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setSelectCustomerMode(true); setShowCustomerModal(true); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-emerald-700 bg-emerald-100 hover:bg-emerald-200 transition-colors"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        Stammdaten
+                      </button>
+                      {kaeufer.firma && (
+                        <button
+                          onClick={saveCurrentBuyerAsCustomer}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                        >
+                          Speichern
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="p-5 space-y-4">
                     <FormInput label="Firma / Name" value={kaeufer.firma} onChange={handleKaeuferChange('firma')}
@@ -1652,6 +2328,7 @@ export default function Home() {
                     </div>
                     <FormInput label="Ansprechpartner" value={kaeufer.ansprechpartner} onChange={handleKaeuferChange('ansprechpartner')} placeholder="Frau Müller" />
                     <FormInput label="E-Mail" type="email" value={kaeufer.email} onChange={handleKaeuferChange('email')} placeholder="rechnung@kunde.de" validate={isValidEmail} />
+                    <FormInput label="Leitweg-ID" value={rechnung.leitwegId} onChange={handleRechnungChange('leitwegId')} placeholder="04011000-12345-12" />
                   </div>
                 </section>
               </div>
@@ -1663,10 +2340,19 @@ export default function Home() {
                     <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><ShoppingCart className="w-4 h-4 text-slate-600" /></div>
                     <h2 className="text-base font-semibold text-slate-900">Leistungen & Positionen</h2>
                   </div>
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={addPosition}
-                    className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
-                    <Plus className="w-4 h-4" />Position
-                  </motion.button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setSelectArticleMode(true); setShowArticleModal(true); }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-amber-700 bg-amber-100 hover:bg-amber-200 transition-colors"
+                    >
+                      <Package className="w-4 h-4" />
+                      Katalog
+                    </button>
+                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={addPosition}
+                      className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+                      <Plus className="w-4 h-4" />Position
+                    </motion.button>
+                  </div>
                 </div>
                 <div className="p-5">
                   {positionen.length === 0 ? <EmptyState onAddPosition={addPosition} /> : (
@@ -1679,7 +2365,18 @@ export default function Home() {
                             <motion.div key={pos.id} initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95, y: -20 }} layout transition={{ duration: 0.2 }}
                               className={`p-4 rounded-xl border transition-all duration-200 ${isComplete ? 'border-emerald-200/80 bg-emerald-50/40 shadow-sm shadow-emerald-100' : 'border-slate-200 bg-slate-50/50 hover:bg-slate-50/80 hover:border-slate-300'}`}>
-                              <TypPillSelector value={pos.typ} onChange={(typ) => updatePosition(pos.id, { typ })} />
+                              <div className="flex items-center justify-between mb-2">
+                                <TypPillSelector value={pos.typ} onChange={(typ) => updatePosition(pos.id, { typ })} />
+                                {isComplete && (
+                                  <button
+                                    onClick={() => savePositionAsArticle(pos)}
+                                    className="text-xs text-slate-500 hover:text-amber-600 transition-colors"
+                                    title="Als Artikel speichern"
+                                  >
+                                    Als Artikel speichern
+                                  </button>
+                                )}
+                              </div>
                               <div className="grid grid-cols-12 gap-2">
                                 <div className="col-span-12 lg:col-span-5">
                                   <input type="text" value={pos.bezeichnung} onChange={e => updatePosition(pos.id, { bezeichnung: e.target.value })}
@@ -1743,6 +2440,7 @@ export default function Home() {
                     positionen={positionen}
                     summen={summen}
                     brutto={brutto}
+                    documentType={documentType}
                     previewRef={previewRef}
                   />
                 </div>
@@ -1787,47 +2485,29 @@ export default function Home() {
 
             {/* Action Buttons - Rechts */}
             <div className="flex items-center gap-2 lg:gap-3">
-              {/* PDF Export Button */}
+              {/* Validation Button */}
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={downloadPDF}
-                disabled={isGeneratingPdf}
-                className={`flex items-center gap-2 px-4 lg:px-5 py-2.5 lg:py-3 min-h-[44px] lg:min-h-[48px] rounded-xl font-medium text-sm transition-all ${
-                  isValid
-                    ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
-                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                }`}
+                onClick={runValidation}
+                className="hidden sm:flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl font-medium text-sm bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200"
               >
-                {isGeneratingPdf ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <FileDown className="w-4 h-4" />
-                )}
-                <span className="hidden sm:inline">PDF</span>
+                <FileCheck className="w-4 h-4" />
+                Prüfen
               </motion.button>
 
-              {/* Primary XML Export Button */}
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={downloadXML}
-                className={`flex items-center gap-2 px-5 lg:px-6 py-3 min-h-[48px] rounded-xl font-semibold text-sm lg:text-base transition-all ${
-                  isValid
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 hover:bg-emerald-700 hover:shadow-xl hover:shadow-emerald-600/30'
-                    : 'bg-slate-200 text-slate-500 cursor-pointer hover:bg-slate-300'
-                }`}
-              >
-                <Download className="w-4 h-4 lg:w-5 lg:h-5" />
-                <span className="hidden sm:inline">XRechnung</span>
-                <span className="sm:hidden">XML</span>
-              </motion.button>
+              {/* Export Dropdown */}
+              <ExportDropdown
+                isValid={isValid}
+                isGeneratingPdf={isGeneratingPdf}
+                onExport={handleExport}
+              />
             </div>
           </div>
 
           {/* Mini Footer Info - Desktop */}
           <div className="hidden lg:flex items-center justify-center gap-4 pb-2 -mt-1">
-            <p className="text-xs text-slate-400">XRechnung 3.0 · EN 16931 konform</p>
+            <p className="text-xs text-slate-400">XRechnung 3.0 · ZUGFeRD 2.2 · EN 16931 konform</p>
             <span className="text-slate-300">·</span>
             <div className="flex items-center gap-1.5 text-xs text-slate-400">
               <Shield className="w-3 h-3" />
@@ -1840,13 +2520,11 @@ export default function Home() {
       {/* Print Styles - Comprehensive */}
       <style jsx global>{`
         @media print {
-          /* Page setup - no browser chrome */
           @page {
             size: A4;
             margin: 0;
           }
 
-          /* Reset everything */
           html, body {
             margin: 0 !important;
             padding: 0 !important;
@@ -1855,7 +2533,6 @@ export default function Home() {
             print-color-adjust: exact !important;
           }
 
-          /* Hide everything except invoice */
           body > div > *:not(main),
           header,
           footer,
@@ -1866,7 +2543,6 @@ export default function Home() {
             display: none !important;
           }
 
-          /* Show main content */
           main {
             display: block !important;
             padding: 0 !important;
@@ -1874,7 +2550,6 @@ export default function Home() {
             max-width: none !important;
           }
 
-          /* Invoice paper styles */
           .invoice-paper {
             box-shadow: none !important;
             margin: 0 !important;
@@ -1884,7 +2559,6 @@ export default function Home() {
             background: white !important;
           }
 
-          /* Ensure black text */
           .invoice-paper * {
             color: black !important;
           }
@@ -1896,7 +2570,6 @@ export default function Home() {
             color: #374151 !important;
           }
 
-          /* Borders for print */
           .invoice-paper .border-gray-200,
           .invoice-paper .border-gray-300 {
             border-color: #9ca3af !important;

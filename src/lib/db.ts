@@ -1,77 +1,17 @@
 import Dexie, { type EntityTable } from 'dexie';
+import type {
+  ArchivedInvoice,
+  InvoiceData,
+  InvoiceNumberSettings,
+  OfferNumberSettings,
+  Customer,
+  Article,
+  DocumentType
+} from './types';
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-export type InvoiceStatus = 'draft' | 'sent' | 'paid';
-
-export interface InvoiceData {
-  rechnung: {
-    nummer: string;
-    datum: string;
-    faelligkeit: string;
-    leistungszeitraum: string;
-    art: string;
-    leitwegId: string;
-    bestellnummer: string;
-  };
-  verkaeufer: {
-    firma: string;
-    strasse: string;
-    plz: string;
-    ort: string;
-    ustId: string;
-    steuernummer: string;
-    iban: string;
-    bic: string;
-    bank: string;
-    handelsregister: string;
-    telefon: string;
-    email: string;
-  };
-  kaeufer: {
-    firma: string;
-    strasse: string;
-    plz: string;
-    ort: string;
-    ustId: string;
-    ansprechpartner: string;
-    email: string;
-    kundennummer: string;
-  };
-  positionen: Array<{
-    id: string;
-    bezeichnung: string;
-    typ: 'L' | 'M' | 'F' | 'S';
-    menge: number;
-    einheit: string;
-    preis: number;
-    ust: number;
-  }>;
-}
-
-export interface ArchivedInvoice {
-  id: string;
-  invoiceNumber: string;
-  customerName: string;
-  totalGross: number;
-  status: InvoiceStatus;
-  createdAt: Date;
-  updatedAt: Date;
-  data: InvoiceData;
-}
-
-export interface InvoiceNumberSettings {
-  id: string;
-  prefix: string;
-  separator: string;
-  yearFormat: '4' | '2';
-  numberLength: number;
-  resetOnYearChange: boolean;
-  lastYear: number;
-  lastNumber: number;
-}
+// Re-export types for backward compatibility
+export type { ArchivedInvoice, InvoiceData, InvoiceNumberSettings, Customer, Article };
+export type { InvoiceStatus, DocumentType, OfferStatus } from './types';
 
 // ============================================================================
 // DATABASE
@@ -79,12 +19,30 @@ export interface InvoiceNumberSettings {
 
 const db = new Dexie('ERechnungDB') as Dexie & {
   invoices: EntityTable<ArchivedInvoice, 'id'>;
-  settings: EntityTable<InvoiceNumberSettings, 'id'>;
+  customers: EntityTable<Customer, 'id'>;
+  articles: EntityTable<Article, 'id'>;
+  settings: EntityTable<InvoiceNumberSettings | OfferNumberSettings, 'id'>;
 };
 
+// Version 1: Original schema
 db.version(1).stores({
   invoices: 'id, invoiceNumber, customerName, status, createdAt, updatedAt',
   settings: 'id'
+});
+
+// Version 2: Add customers, articles, documentType
+db.version(2).stores({
+  invoices: 'id, invoiceNumber, customerName, status, documentType, createdAt, updatedAt',
+  customers: 'id, name, customerNumber, city, createdAt',
+  articles: 'id, name, type, category, articleNumber, createdAt',
+  settings: 'id'
+}).upgrade(tx => {
+  // Migrate existing invoices to have documentType
+  return tx.table('invoices').toCollection().modify(invoice => {
+    if (!invoice.documentType) {
+      invoice.documentType = 'invoice';
+    }
+  });
 });
 
 export { db };
@@ -104,8 +62,19 @@ export const getDefaultSettings = (): InvoiceNumberSettings => ({
   lastNumber: 0
 });
 
+export const getDefaultOfferSettings = (): OfferNumberSettings => ({
+  id: 'offer-number-settings',
+  prefix: 'ANG',
+  separator: '-',
+  yearFormat: '4',
+  numberLength: 4,
+  resetOnYearChange: true,
+  lastYear: new Date().getFullYear(),
+  lastNumber: 0
+});
+
 export const generateInvoiceNumber = async (): Promise<string> => {
-  let settings = await db.settings.get('invoice-number-settings');
+  let settings = await db.settings.get('invoice-number-settings') as InvoiceNumberSettings | undefined;
 
   if (!settings) {
     settings = getDefaultSettings();
@@ -115,7 +84,6 @@ export const generateInvoiceNumber = async (): Promise<string> => {
   const currentYear = new Date().getFullYear();
   let nextNumber = settings.lastNumber + 1;
 
-  // Reset number on year change if enabled
   if (settings.resetOnYearChange && currentYear !== settings.lastYear) {
     nextNumber = 1;
   }
@@ -126,7 +94,36 @@ export const generateInvoiceNumber = async (): Promise<string> => {
 
   const numberStr = nextNumber.toString().padStart(settings.numberLength, '0');
 
-  // Update settings
+  await db.settings.put({
+    ...settings,
+    lastYear: currentYear,
+    lastNumber: nextNumber
+  });
+
+  return `${settings.prefix}${settings.separator}${yearStr}${settings.separator}${numberStr}`;
+};
+
+export const generateOfferNumber = async (): Promise<string> => {
+  let settings = await db.settings.get('offer-number-settings') as OfferNumberSettings | undefined;
+
+  if (!settings) {
+    settings = getDefaultOfferSettings();
+    await db.settings.put(settings);
+  }
+
+  const currentYear = new Date().getFullYear();
+  let nextNumber = settings.lastNumber + 1;
+
+  if (settings.resetOnYearChange && currentYear !== settings.lastYear) {
+    nextNumber = 1;
+  }
+
+  const yearStr = settings.yearFormat === '4'
+    ? currentYear.toString()
+    : currentYear.toString().slice(-2);
+
+  const numberStr = nextNumber.toString().padStart(settings.numberLength, '0');
+
   await db.settings.put({
     ...settings,
     lastYear: currentYear,
@@ -137,10 +134,33 @@ export const generateInvoiceNumber = async (): Promise<string> => {
 };
 
 export const getNextInvoiceNumber = async (): Promise<string> => {
-  let settings = await db.settings.get('invoice-number-settings');
+  let settings = await db.settings.get('invoice-number-settings') as InvoiceNumberSettings | undefined;
 
   if (!settings) {
     settings = getDefaultSettings();
+  }
+
+  const currentYear = new Date().getFullYear();
+  let nextNumber = settings.lastNumber + 1;
+
+  if (settings.resetOnYearChange && currentYear !== settings.lastYear) {
+    nextNumber = 1;
+  }
+
+  const yearStr = settings.yearFormat === '4'
+    ? currentYear.toString()
+    : currentYear.toString().slice(-2);
+
+  const numberStr = nextNumber.toString().padStart(settings.numberLength, '0');
+
+  return `${settings.prefix}${settings.separator}${yearStr}${settings.separator}${numberStr}`;
+};
+
+export const getNextOfferNumber = async (): Promise<string> => {
+  let settings = await db.settings.get('offer-number-settings') as OfferNumberSettings | undefined;
+
+  if (!settings) {
+    settings = getDefaultOfferSettings();
   }
 
   const currentYear = new Date().getFullYear();
@@ -166,11 +186,88 @@ export const checkDuplicateInvoiceNumber = async (invoiceNumber: string, exclude
   return true;
 };
 
+export const generateDocumentNumber = async (type: DocumentType): Promise<string> => {
+  return type === 'invoice' ? generateInvoiceNumber() : generateOfferNumber();
+};
+
+export const getNextDocumentNumber = async (type: DocumentType): Promise<string> => {
+  return type === 'invoice' ? getNextInvoiceNumber() : getNextOfferNumber();
+};
+
+// ============================================================================
+// CUSTOMER FUNCTIONS
+// ============================================================================
+
+export const getAllCustomers = async (): Promise<Customer[]> => {
+  return db.customers.orderBy('name').toArray();
+};
+
+export const getCustomer = async (id: string): Promise<Customer | undefined> => {
+  return db.customers.get(id);
+};
+
+export const saveCustomer = async (customer: Customer): Promise<string> => {
+  await db.customers.put(customer);
+  return customer.id;
+};
+
+export const deleteCustomer = async (id: string): Promise<void> => {
+  await db.customers.delete(id);
+};
+
+export const searchCustomers = async (query: string): Promise<Customer[]> => {
+  const lowerQuery = query.toLowerCase();
+  const all = await db.customers.toArray();
+  return all.filter(c =>
+    c.name.toLowerCase().includes(lowerQuery) ||
+    (c.customerNumber && c.customerNumber.toLowerCase().includes(lowerQuery)) ||
+    c.city.toLowerCase().includes(lowerQuery)
+  );
+};
+
+// ============================================================================
+// ARTICLE FUNCTIONS
+// ============================================================================
+
+export const getAllArticles = async (): Promise<Article[]> => {
+  return db.articles.orderBy('name').toArray();
+};
+
+export const getArticle = async (id: string): Promise<Article | undefined> => {
+  return db.articles.get(id);
+};
+
+export const saveArticle = async (article: Article): Promise<string> => {
+  await db.articles.put(article);
+  return article.id;
+};
+
+export const deleteArticle = async (id: string): Promise<void> => {
+  await db.articles.delete(id);
+};
+
+export const searchArticles = async (query: string): Promise<Article[]> => {
+  const lowerQuery = query.toLowerCase();
+  const all = await db.articles.toArray();
+  return all.filter(a =>
+    a.name.toLowerCase().includes(lowerQuery) ||
+    (a.articleNumber && a.articleNumber.toLowerCase().includes(lowerQuery)) ||
+    (a.category && a.category.toLowerCase().includes(lowerQuery))
+  );
+};
+
+export const getArticlesByType = async (type: Article['type']): Promise<Article[]> => {
+  return db.articles.where('type').equals(type).toArray();
+};
+
+// ============================================================================
+// MIGRATION
+// ============================================================================
+
 export const migrateFromLocalStorage = async (): Promise<void> => {
   const STORAGE_KEY = 'e-rechnung-formdata';
   const migrationKey = 'e-rechnung-migrated';
 
-  // Check if already migrated
   if (localStorage.getItem(migrationKey)) return;
 
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -182,7 +279,6 @@ export const migrateFromLocalStorage = async (): Promise<void> => {
   try {
     const data = JSON.parse(saved) as InvoiceData;
 
-    // Only migrate if there's actual data
     if (data.rechnung?.nummer || data.verkaeufer?.firma || data.kaeufer?.firma) {
       const summen = data.positionen.reduce((acc, pos) => {
         if (pos.bezeichnung && pos.menge > 0 && pos.preis > 0) {
@@ -200,6 +296,7 @@ export const migrateFromLocalStorage = async (): Promise<void> => {
         customerName: data.kaeufer.firma || 'Unbekannt',
         totalGross: summen.netto + summen.ust,
         status: 'draft',
+        documentType: 'invoice',
         createdAt: new Date(),
         updatedAt: new Date(),
         data
