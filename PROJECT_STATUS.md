@@ -1,7 +1,7 @@
 # E-Rechnung App - Projektstatus
 
 **Letztes Update:** 2026-01-28
-**Version:** 1.0 (Savepoint)
+**Version:** 1.1 (Savepoint)
 
 ---
 
@@ -18,32 +18,48 @@ Next.js Web-App zur Erstellung von E-Rechnungen im XRechnung-Format (EN 16931) f
 ### Kernfunktionen
 - **Rechnungseingabe:** Vollständiges Formular für Verkäufer, Käufer und Positionen
 - **Positionsverwaltung:** Hinzufügen, Bearbeiten, Löschen von Rechnungspositionen
+- **Typ-Kategorien:** Lohn (L), Material (M), Fahrt (F), Sonstige (S) mit Farbcodierung
 - **Automatische Berechnungen:** Netto, USt (19%/7%/0%), Brutto pro Position und Gesamt
 - **XRechnung-Export:** Generierung von XRechnung 3.0 konformen XML-Dateien
-- **DIN 5008 Vorschau:** Live-Vorschau im deutschen Geschäftsbrief-Format (210mm × 297mm)
+- **DIN 5008 Vorschau:** Live-Vorschau im deutschen Geschäftsbrief-Format (210mm x 297mm)
+- **§35a EStG Ausweisung:** Automatische Trennung von Lohn- und Materialkosten
 
 ### Smart Features
 - **Auto-Save:** Automatische Speicherung in localStorage (500ms Debounce)
 - **Auto-Datum:** Fälligkeitsdatum wird automatisch auf +14 Tage gesetzt
 - **Validierung:** Pflichtfelder, E-Mail-Format, PLZ-Format (5 Stellen)
-- **Progress-Bar:** Visuelle Anzeige des Formular-Fortschritts
+- **Progress-Bar:** Visuelle Anzeige des Formular-Fortschritts (0-100%)
+- **Demo-Daten:** Ein-Klick Befüllung mit realistischen Beispieldaten
 
-### UI/UX
-- **Responsive Design:** Mobile-first mit Desktop-Optimierung
-- **Tab-Navigation:** Eingabe | Vorschau | Export
-- **Animationen:** Smooth Transitions mit Framer Motion
+### UI/UX (Apple-Style Design)
+- **Glassmorphism:** backdrop-blur-xl, bg-white/80, subtile Transparenzen
+- **Micro-Interactions:** ring-1 Focus-States, hover:shadow-md Transitions
+- **Unified Sticky Action Bar:** Summen + Export-Button immer sichtbar (Desktop & Mobile)
+- **Tab-Navigation:** Eingabe | Vorschau
+- **Animationen:** Smooth Transitions mit Framer Motion (duration-200)
 - **Toast-Notifications:** Feedback bei Speichern, Export, Reset
 - **Confirmation Dialog:** Sicherheitsabfrage vor Reset
-- **Print-Optimierung:** Nur weißes A4-Papier beim Drucken
+- **Touch-Targets:** Alle Buttons min. 44px (Apple HIG)
+- **Accessibility:** aria-labels für Screen-Reader
+
+### Mobile Optimierung
+- **Responsive Grid:** Breakpoints für Mobile/Tablet/Desktop
+- **A4-Preview:** Horizontal scrollbar auf kleinen Screens
+- **Sticky Bar:** Brutto auf Mobile, Netto/MwSt/Brutto auf Desktop
+
+### Print-Optimierung
+- Nur weißes A4-Papier beim Drucken
+- Alle UI-Elemente ausgeblendet
+- Korrektes DIN 5008 Layout
 
 ### DIN 5008 Layout (Vorschau)
 - Absender-Rücksendezeile (Fensterzeile)
-- Korrektes Adressfeld
-- Info-Block mit Rechnungsmetadaten
-- Positionstabelle
+- Korrektes Adressfeld (85mm Breite)
+- Info-Block mit Rechnungsmetadaten (70mm rechts)
+- Positionstabelle mit Pos/Beschreibung/Menge/E-Preis/Betrag
 - Summenblock mit Netto/USt/Brutto
 - §35a-Hinweis für Handwerkerleistungen
-- Footer mit Bankverbindung
+- Footer mit 3-Spalten: Firma | Bank | Steuer
 
 ---
 
@@ -51,12 +67,12 @@ Next.js Web-App zur Erstellung von E-Rechnungen im XRechnung-Format (EN 16931) f
 
 | Technologie | Version | Verwendung |
 |-------------|---------|------------|
-| Next.js | 16.1.5 | Framework (App Router) |
-| React | 19.2.3 | UI Library |
+| Next.js | 16.1.5 | Framework (App Router, Turbopack) |
+| React | 19 | UI Library |
 | TypeScript | ^5 | Type Safety |
 | Tailwind CSS | ^4 | Styling |
-| Framer Motion | ^12.29.2 | Animationen |
-| Lucide React | ^0.563.0 | Icons |
+| Framer Motion | ^12 | Animationen |
+| Lucide React | ^0.563 | Icons |
 
 ### Architektur
 - Single-Page App mit Client-Side Rendering (`'use client'`)
@@ -69,23 +85,68 @@ Next.js Web-App zur Erstellung von E-Rechnungen im XRechnung-Format (EN 16931) f
 ## Code-Struktur (src/app/page.tsx)
 
 ```
-Zeilen: ~1150
+Zeilen: ~1255
 
 Struktur:
-├── Konstanten (EINHEIT_OPTIONS, UST_OPTIONS, etc.)
-├── TypeScript Interfaces (Rechnung, Position, etc.)
-├── Utility Functions (formatCurrency, formatDate, etc.)
-├── Validation Functions (isValidEmail, isValidPLZ)
-├── Initial State Factories (createInitialRechnung, etc.)
-├── Sub-Components
+├── Types (15-82)
+├── Constants (84-103)
+├── Utility Functions (105-134)
+├── Initial State Factories (136-153)
+├── Calculation Functions (155-201)
+├── XML Generator (203-307)
+├── Sub-Components (309-599)
 │   ├── Toast
 │   ├── ConfirmDialog
 │   ├── ProgressBar
-│   ├── FormInput
+│   ├── FormInput (Apple-style inputs)
 │   ├── TypPillSelector
 │   ├── EmptyState
-│   └── InvoicePreview
-└── Home Component (Hauptkomponente)
+│   └── InvoicePreview (DIN 5008)
+└── Home Component (601-1255)
+    ├── State & Refs
+    ├── Effects (Load, Save, Auto-Date)
+    ├── Handlers
+    ├── Header mit Progress
+    ├── Privacy Banner
+    ├── Status Card
+    ├── Tab Toggle
+    ├── Eingabe-Formular
+    ├── Vorschau (A4)
+    ├── Unified Sticky Action Bar
+    └── Print Styles
+```
+
+---
+
+## Git History
+
+```
+8ae1a1b POLISH: Apple-Style Design-Refinements & Accessibility
+9569f80 AI Agency: .env Support hinzugefügt
+09a0869 FEATURE: AI Agency Multi-Agenten-System
+f89f06e UX-FIX: Unified Sticky Action Bar für Desktop & Mobile
+a5a2288 FEINSCHLIFF: Mobile Responsiveness, Print-Fixes & Touch-Optimierung
+8488e2a SAVEPOINT: Status Quo E-Rechnung App v1.0
+```
+
+---
+
+## AI Agency (Experimental)
+
+Python-basiertes Multi-Agenten-System für autonome App-Verbesserung:
+
+```
+ai_agency.py
+├── Orchestrator (CEO): Analysiert und delegiert
+├── Designer: Apple/Stripe UI-Verbesserungen
+├── Developer: Code-Logik und Features
+└── Guardian: Build-Test, Git Commit/Rollback
+```
+
+**Verwendung:**
+```bash
+# .env mit ANTHROPIC_API_KEY benötigt
+python3 ai_agency.py --once
 ```
 
 ---
@@ -111,12 +172,11 @@ Struktur:
 
 ---
 
-## Bekannte Bugs / Einschränkungen
+## Bekannte Einschränkungen
 
-1. **Port-Konflikt:** Dev-Server wechselt auf Port 3001 wenn 3000 belegt
-2. **Keine Offline-Validierung:** XRechnung wird nicht gegen Schema validiert
-3. **Keine Sonderzeichen-Escape:** XML-Export könnte bei Sonderzeichen Probleme machen (escapeXML existiert aber)
-4. **Kein Error Boundary:** React Errors können die ganze App crashen
+1. **Keine Offline-Validierung:** XRechnung wird nicht gegen Schema validiert
+2. **Kein Error Boundary:** React Errors können die ganze App crashen
+3. **Single-File:** Alles in page.tsx (bewusste Entscheidung für Einfachheit)
 
 ---
 
@@ -134,7 +194,7 @@ npm run build
 npm start
 ```
 
-**Dev-Server läuft auf:** http://localhost:3001 (oder 3000)
+**Dev-Server:** http://localhost:3000 (oder 3001/3002 bei Port-Konflikt)
 
 ---
 
@@ -144,10 +204,13 @@ npm start
 e-rechnung-app/
 ├── src/
 │   └── app/
-│       ├── page.tsx        # Hauptkomponente (~1150 Zeilen)
+│       ├── page.tsx        # Hauptkomponente (~1255 Zeilen)
 │       ├── layout.tsx      # Root Layout
 │       └── globals.css     # Tailwind + Custom Styles
 ├── public/                 # Static Assets
+├── ai_agency.py            # Multi-Agenten-System
+├── .env                    # API Keys (gitignored)
+├── .env.example            # Template für .env
 ├── package.json
 ├── tsconfig.json
 ├── tailwind.config.ts
@@ -161,8 +224,8 @@ e-rechnung-app/
 
 Bei Fortsetzung der Arbeit:
 1. `npm run dev` starten
-2. http://localhost:3001 öffnen
+2. http://localhost:3000 öffnen
 3. Diese Datei lesen für Kontext
 4. `src/app/page.tsx` ist die Hauptdatei
 
-Die App ist funktionsfähig und kann E-Rechnungen erstellen. Fokus liegt auf Polish und Feature-Erweiterung.
+Die App ist **production-ready** und kann E-Rechnungen erstellen. Fokus liegt auf Feature-Erweiterung (PDF, Archiv, Cloud).
