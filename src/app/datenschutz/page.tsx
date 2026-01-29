@@ -7,9 +7,9 @@ export default function Datenschutz() {
         <h2 className="text-lg font-semibold mt-6 mb-2">1. Verantwortlicher</h2>
         <p className="text-gray-700">
           Marc Traut<br />
-          Musterstraße 123<br />
+          Walderdorffstraße 5a<br />
           65549 Limburg an der Lahn<br />
-          E-Mail: deine@email.de
+          E-Mail: e.rechnung.app@gmail.com
         </p>
 
         <h2 className="text-lg font-semibold mt-6 mb-2">2. Lokale Datenspeicherung</h2>

@@ -7,19 +7,19 @@ export default function Impressum() {
         <h2 className="text-lg font-semibold mt-6 mb-2">Angaben gemäß § 5 TMG</h2>
         <p className="text-gray-700">
           Marc Traut<br />
-          Musterstraße 123<br />
+          Walderdorffstraße 5a<br />
           65549 Limburg an der Lahn
         </p>
 
         <h2 className="text-lg font-semibold mt-6 mb-2">Kontakt</h2>
         <p className="text-gray-700">
-          E-Mail: deine@email.de
+          E-Mail: e.rechnung.app@gmail.com
         </p>
 
         <h2 className="text-lg font-semibold mt-6 mb-2">Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV</h2>
         <p className="text-gray-700">
           Marc Traut<br />
-          Musterstraße 123<br />
+          Walderdorffstraße 5a<br />
           65549 Limburg an der Lahn
         </p>
 
