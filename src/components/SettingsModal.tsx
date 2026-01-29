@@ -282,13 +282,13 @@ export function SettingsModal({
 
               {/* App Info */}
               <div className="pt-4 border-t border-slate-200">
-                <div className="text-center text-xs text-slate-400 space-y-1">
+                <div className="text-center text-xs text-slate-400 space-y-2">
                   <p>E-Rechnung App v1.0</p>
-                  <p>
-                    <a href="https://e-rechnung-app.de" target="_blank" rel="noopener noreferrer" className="hover:text-slate-600">
-                      e-rechnung-app.de
-                    </a>
-                  </p>
+                  <div className="flex justify-center gap-3">
+                    <a href="/impressum" target="_blank" className="hover:text-slate-600 hover:underline">Impressum</a>
+                    <span>•</span>
+                    <a href="/datenschutz" target="_blank" className="hover:text-slate-600 hover:underline">Datenschutz</a>
+                  </div>
                 </div>
               </div>
             </div>
