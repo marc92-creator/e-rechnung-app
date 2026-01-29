@@ -56,24 +56,14 @@ export function UpgradeModal({
     }
   };
 
+  // Format key: just uppercase and allow alphanumeric + hyphens
   const formatKey = (value: string) => {
-    // Remove all non-alphanumeric except hyphens
-    let clean = value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    return value.toUpperCase().replace(/[^A-F0-9-]/g, '');
+  };
 
-    // If they type without the prefix, add it
-    if (!clean.startsWith('ERECH') && clean.length > 0 && !clean.startsWith('E')) {
-      clean = 'ERECH-' + clean;
-    }
-
-    // Auto-add hyphens
-    const parts = clean.replace(/^ERECH-?/, '').replace(/-/g, '');
-    let formatted = 'ERECH';
-    for (let i = 0; i < parts.length && i < 16; i++) {
-      if (i % 4 === 0) formatted += '-';
-      formatted += parts[i];
-    }
-
-    return formatted;
+  // Check if key has valid length (UUID: 36, ERECH: 24)
+  const isValidKeyLength = (key: string) => {
+    return key.length === 36 || key.length === 24;
   };
 
   const getTriggerMessage = () => {
@@ -207,13 +197,13 @@ export function UpgradeModal({
                         setLicenseKey(formatKey(e.target.value));
                         setError(null);
                       }}
-                      placeholder="ERECH-XXXX-XXXX-XXXX-XXXX"
-                      className={`w-full px-4 py-3 rounded-xl border-2 font-mono text-center tracking-wider ${
+                      placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+                      className={`w-full px-4 py-3 rounded-xl border-2 font-mono text-center tracking-wider text-slate-900 placeholder-slate-400 ${
                         error
                           ? 'border-red-300 bg-red-50 focus:border-red-500'
-                          : 'border-slate-200 focus:border-emerald-500'
+                          : 'border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
                       } outline-none transition-colors`}
-                      maxLength={24}
+                      maxLength={36}
                     />
                     {error && (
                       <p className="text-red-600 text-sm mt-2">{error}</p>
@@ -225,7 +215,7 @@ export function UpgradeModal({
 
                   <button
                     onClick={handleActivate}
-                    disabled={licenseKey.length < 24 || isActivating}
+                    disabled={!isValidKeyLength(licenseKey) || isActivating}
                     className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isActivating ? (

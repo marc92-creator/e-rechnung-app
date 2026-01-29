@@ -37,18 +37,14 @@ export function SettingsModal({
   const [isActivating, setIsActivating] = useState(false);
   const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
 
+  // Format key: just uppercase and allow alphanumeric + hyphens
   const formatKey = (value: string) => {
-    let clean = value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
-    if (!clean.startsWith('ERECH') && clean.length > 0 && !clean.startsWith('E')) {
-      clean = 'ERECH-' + clean;
-    }
-    const parts = clean.replace(/^ERECH-?/, '').replace(/-/g, '');
-    let formatted = 'ERECH';
-    for (let i = 0; i < parts.length && i < 16; i++) {
-      if (i % 4 === 0) formatted += '-';
-      formatted += parts[i];
-    }
-    return formatted;
+    return value.toUpperCase().replace(/[^A-F0-9-]/g, '');
+  };
+
+  // Check if key has valid length (UUID: 36, ERECH: 24)
+  const isValidKeyLength = (key: string) => {
+    return key.length === 36 || key.length === 24;
   };
 
   const handleActivate = async () => {
@@ -82,7 +78,12 @@ export function SettingsModal({
   const maskLicenseKey = (key: string) => {
     // Show first and last parts, mask middle
     const parts = key.split('-');
-    return `${parts[0]}-****-****-****-${parts[4]}`;
+    if (parts.length === 5) {
+      // UUID format (8-4-4-4-12) or ERECH format
+      return `${parts[0]}-****-****-****-${parts[4]}`;
+    }
+    // Fallback: show first 4 and last 4 chars
+    return `${key.slice(0, 4)}****${key.slice(-4)}`;
   };
 
   return (
@@ -200,15 +201,15 @@ export function SettingsModal({
                         setNewLicenseKey(formatKey(e.target.value));
                         setError(null);
                       }}
-                      placeholder="ERECH-XXXX-XXXX-XXXX-XXXX"
-                      className={`flex-1 px-3 py-2 rounded-lg border font-mono text-sm ${
-                        error ? 'border-red-300 bg-red-50' : 'border-slate-200'
-                      } focus:outline-none focus:border-emerald-500`}
-                      maxLength={24}
+                      placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+                      className={`flex-1 px-3 py-2 rounded-lg border font-mono text-sm text-slate-900 placeholder-slate-400 ${
+                        error ? 'border-red-300 bg-red-50' : 'border-slate-300'
+                      } focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500`}
+                      maxLength={36}
                     />
                     <button
                       onClick={handleActivate}
-                      disabled={newLicenseKey.length < 24 || isActivating}
+                      disabled={!isValidKeyLength(newLicenseKey) || isActivating}
                       className="px-4 py-2 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                       {isActivating ? (

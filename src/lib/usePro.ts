@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-// License key format: ERECH-XXXX-XXXX-XXXX-XXXX
-// Simple validation: prefix check + checksum
+// License key formats:
+// 1. Lemon Squeezy UUID: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX (8-4-4-4-12)
+// 2. Legacy ERECH: ERECH-XXXX-XXXX-XXXX-XXXX
 
 interface ProState {
   isPro: boolean;
@@ -50,26 +51,17 @@ const FREE_LIMITS = {
   articles: 10,
 };
 
-// Validate license key format and checksum
+// Validate license key format
 export function validateLicenseKey(key: string): boolean {
-  // Format: ERECH-XXXX-XXXX-XXXX-XXXX
-  const pattern = /^ERECH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
-  if (!pattern.test(key.toUpperCase())) {
-    return false;
-  }
+  const trimmedKey = key.trim().toUpperCase();
 
-  // Simple checksum: sum of all alphanumeric values should be divisible by 7
-  const parts = key.toUpperCase().replace('ERECH-', '').replace(/-/g, '');
-  let sum = 0;
-  for (const char of parts) {
-    if (char >= 'A' && char <= 'Z') {
-      sum += char.charCodeAt(0) - 64; // A=1, B=2, etc.
-    } else {
-      sum += parseInt(char, 10);
-    }
-  }
+  // Lemon Squeezy UUID Format (8-4-4-4-12)
+  const uuidPattern = /^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$/;
 
-  return sum % 7 === 0;
+  // Legacy ERECH Format
+  const erechPattern = /^ERECH-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+
+  return uuidPattern.test(trimmedKey) || erechPattern.test(trimmedKey);
 }
 
 // Generate a valid license key (for testing)
